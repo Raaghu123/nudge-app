@@ -4,4 +4,4 @@ A calm, intelligent reminder app that understands when a task can actually be do
 
 Flutter, Android-first, rules-first. See [`docs/`](docs/) for the constitution (PRODUCT, ARCHITECTURE, UX, ROADMAP) and [`AGENTS.md`](AGENTS.md) for build instructions.
 
-**Status:** Phase 0 — Project Foundation (docs + app shell + CI ready; commit/push pending).
+**Status:** Phase 0 — Project Foundation (docs + app shell + CI in place). Repo: github.com/Raaghu123/nudge-app (private).

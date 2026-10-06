@@ -198,6 +198,16 @@ class _CreateReminderScreenState extends State<CreateReminderScreen> {
                       onPressed: () async {
                         if (!_formKey.currentState!.validate()) return;
 
+                        if ((_recurrence == Recurrence.weekly || _recurrence == Recurrence.custom) &&
+                            _weekdays.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Choose at least one day'),
+                            ),
+                          );
+                          return;
+                        }
+
                         final hour = int.tryParse(_hourController.text) ?? 9;
                         final minute = int.tryParse(_minuteController.text) ?? 0;
 

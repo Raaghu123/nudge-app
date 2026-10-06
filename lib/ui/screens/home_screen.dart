@@ -66,6 +66,12 @@ class _ReminderTile extends StatelessWidget {
                     context.read<ReminderProvider>().snooze(reminder.id!);
                   },
                 ),
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () {
+                    _confirmDelete(context, reminder.id!);
+                  },
+                ),
               ],
             )
           : null,
@@ -78,6 +84,30 @@ String _formatTime(DateTime? dt) {
     return '--:--';
   }
   return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+}
+
+Future<void> _confirmDelete(BuildContext context, int id) async {
+  final provider = context.read<ReminderProvider>();
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Delete reminder?'),
+      content: const Text('This cannot be undone.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    await provider.deleteReminder(id);
+  }
 }
 
 class _CategoryBadge extends StatelessWidget {

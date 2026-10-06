@@ -19,6 +19,16 @@ class ReminderProvider extends ChangeNotifier {
     final db = await openAppDatabase();
     _repo = ReminderRepository(db);
     _reminders = await _repo!.getAll();
+    final now = DateTime.now();
+    for (final r in _reminders) {
+      if (r.status == ReminderStatus.pending &&
+          r.nextFireAt != null &&
+          !r.nextFireAt!.isAfter(now)) {
+        final due = r.copyWith(status: ReminderStatus.due);
+        await _repo!.update(due);
+        _replace(due);
+      }
+    }
     for (final r in _reminders) {
       if (r.status == ReminderStatus.pending || r.status == ReminderStatus.due) {
         await NotificationService.scheduleNext(r);
@@ -116,12 +126,29 @@ class ReminderProvider extends ChangeNotifier {
   }
 
   void _handleNotificationAction(int id, String? actionId) {
+    _markDelivered(id);
     if (actionId == 'done') {
       complete(id);
     } else if (actionId == 'snooze') {
       snooze(id);
     } else {
       acknowledge(id);
+    }
+  }
+
+  /// Records that the notification reached the user: tapping it (or one of
+  /// its actions) proves delivery, so pending/due becomes delivered before
+  /// the action itself is applied.
+  Future<void> _markDelivered(int id) async {
+    await _ensureInit();
+    final i = _reminders.indexWhere((e) => e.id == id);
+    if (i < 0) return;
+    final r = _reminders[i];
+    if (r.status == ReminderStatus.pending || r.status == ReminderStatus.due) {
+      final delivered = r.copyWith(status: ReminderStatus.delivered);
+      await _repo!.update(delivered);
+      _reminders[i] = delivered;
+      notifyListeners();
     }
   }
 

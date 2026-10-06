@@ -9,7 +9,8 @@ class NotificationService {
   static void Function(int id, String? actionId)? onAction;
 
   static void _onResponse(NotificationResponse response) {
-    onAction?.call(response.id, response.actionId);
+    final id = response.id;
+    if (id != null) onAction?.call(id, response.actionId);
   }
 
   static Future<void> initialize() async {
@@ -49,6 +50,8 @@ class NotificationService {
       tzDate,
       details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
     );
   }
 

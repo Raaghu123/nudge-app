@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:nudge/core/models/reminder.dart';
 import 'package:nudge/core/recurrence.dart';
 import 'package:nudge/core/db/database_helper.dart';

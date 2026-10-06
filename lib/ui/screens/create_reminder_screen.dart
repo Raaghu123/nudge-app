@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Category;
 import 'package:provider/provider.dart';
 import 'package:nudge/core/models/reminder.dart';
 import 'package:nudge/core/providers/reminder_provider.dart';

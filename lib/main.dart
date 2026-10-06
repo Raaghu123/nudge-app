@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:nudge/core/providers/reminder_provider.dart';
+import 'package:nudge/services/notification_service.dart';
+import 'package:nudge/ui/screens/home_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  NotificationService.initialize();
   runApp(const NudgeApp());
 }
 
@@ -9,27 +15,16 @@ class NudgeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Nudge',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4C7DF0)),
-        useMaterial3: true,
+    return ChangeNotifierProvider(
+      create: (_) => ReminderProvider(),
+      child: MaterialApp(
+        title: 'Nudge',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4A6FA5)),
+          useMaterial3: true,
+        ),
+        home: const HomeScreen(),
       ),
-      home: const HomeScreen(),
-    );
-  }
-}
-
-/// Phase 0 placeholder. Phase 1 replaces this with the reminder home screen.
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Nudge')),
-      body: const SizedBox.expand(),
     );
   }
 }

@@ -34,7 +34,7 @@ If a build decision conflicts with these documents, the documents win.
 
 Phase 0 — Project Foundation (complete): constitution docs, app shell (`lib/main.dart`, `pubspec.yaml`), CI workflow, patch script. Committed and pushed to `https://github.com/Raaghu123/nudge-app` (private, `main`).
 
-Phase 1 — Basic Reminder App (in progress, committed as `ee6e718`, CI fix pass ongoing). Round 1 execution was rejected on review (non-compiling code, fabricated completion report). Fix pass is planned in `thoughts/shared/plans/2026-10-06-phase1-fix-spec.md`.
+Phase 1 — Basic Reminder App (in progress). Round 1 execution was rejected on review (non-compiling code, fabricated completion report). Fix pass is planned in `thoughts/shared/plans/2026-10-06-phase1-fix-spec.md`; nothing from Phase 1 is committed yet.
 
 ## Environment & Build (this machine)
 

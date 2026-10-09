@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -24,6 +26,12 @@ import 'package:nudge/core/repositories/reminder_repository.dart';
 /// caught and printed with the exact exception instead of failing silently.
 @pragma('vm:entry-point')
 Future<void> notificationTapBackground(NotificationResponse response) async {
+  // REQUIRED first line: this runs in a background isolate where the
+  // generated Dart plugin registrant never ran. Without it, every plugin
+  // call below (sqflite open/query/update, plugin cancel/schedule) throws
+  // MissingPluginException and the action silently does nothing.
+  // (dart:ui, idempotent, must not be called on the root isolate.)
+  DartPluginRegistrant.ensureInitialized();
   print('NudgeBg: fired id=${response.id} actionId=${response.actionId}');
   final id = response.id;
   if (id == null) {

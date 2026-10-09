@@ -4,9 +4,9 @@ import 'package:nudge/core/providers/reminder_provider.dart';
 import 'package:nudge/services/notification_service.dart';
 import 'package:nudge/ui/screens/home_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  NotificationService.initialize();
+  await NotificationService.initialize();
   runApp(const NudgeApp());
 }
 

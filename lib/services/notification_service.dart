@@ -105,13 +105,26 @@ class NotificationService {
     );
     await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
     await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestExactAlarmsPermission();
+    // Ground truth for exact-alarm privilege on this device. If this logs
+    // false, every exactAllowWhileIdle schedule silently degrades to an
+    // inexact alarm (batched/delayed by Android) no matter what the
+    // manifest declares — check Settings > Alarms & reminders.
+    final canExact = await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.canScheduleExactNotifications();
+    print('NudgeSched: canScheduleExactNotifications=$canExact');
     await _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
   static Future<void> scheduleNext(Reminder r) async {
     if (r.nextFireAt == null) return;
     final tzDate = tz.TZDateTime.from(r.nextFireAt!, tz.local);
-    if (tzDate.isBefore(tz.TZDateTime.now(tz.local))) return;
+    if (tzDate.isBefore(tz.TZDateTime.now(tz.local))) {
+      print('NudgeSched: skipping id=${r.id} (fire time ${r.nextFireAt!.toIso8601String()} is in the past)');
+      return;
+    }
+    // Proves the exact instant programmed into AlarmManager: compare the
+    // epoch here against the observed delivery time in logcat to tell an
+    // app-side time bug apart from platform-side batching/delay.
+    print('NudgeSched: scheduling id=${r.id} fireAt=${tzDate.toIso8601String()} epoch=${tzDate.millisecondsSinceEpoch}');
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'nudge_reminders',

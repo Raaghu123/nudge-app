@@ -28,15 +28,22 @@ else:
     print('permissions already present')
 
 # ---- Phase 1: flutter_local_notifications receivers inside <application> ----
+# ActionBroadcastReceiver is REQUIRED for notification action buttons
+# (Done/Snooze): without it the action PendingIntents have no target and
+# taps silently do nothing. Matches the plugin README manifest setup.
 receivers = (
+    '    <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />\n'
     '    <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />\n'
     '    <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">\n'
     '        <intent-filter>\n'
     '            <action android:name="android.intent.action.BOOT_COMPLETED" />\n'
+    '            <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />\n'
+    '            <action android:name="android.intent.action.QUICKBOOT_POWERON" />\n'
+    '            <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />\n'
     '        </intent-filter>\n'
     '    </receiver>\n'
 )
-if 'ScheduledNotificationReceiver' not in t:
+if 'ActionBroadcastReceiver' not in t or 'ScheduledNotificationReceiver' not in t:
     t = t.replace('</application>', receivers + '</application>', 1)
     m.write_text(t)
     print('receivers injected')

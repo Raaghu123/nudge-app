@@ -14,34 +14,64 @@ import 'package:nudge/core/repositories/reminder_repository.dart';
 /// tap would be silently dropped. This entry-point runs in a background
 /// isolate instead and applies the action straight to the database, then
 /// reschedules or cancels via the plugin.
+///
+/// Public top-level function (not private): the native side looks this
+/// callback up by handle, so it must survive tree-shaking (hence the
+/// entry-point pragma) and stay referenceable.
+///
+/// Logging: every step prints a `NudgeBg:` line so a cold action tap can be
+/// traced end-to-end in logcat (`adb logcat | grep NudgeBg`). Any failure is
+/// caught and printed with the exact exception instead of failing silently.
 @pragma('vm:entry-point')
-Future<void> _backgroundResponse(NotificationResponse response) async {
+Future<void> notificationTapBackground(NotificationResponse response) async {
+  print('NudgeBg: fired id=${response.id} actionId=${response.actionId}');
   final id = response.id;
-  if (id == null) return;
-  tz.initializeTimeZones();
-  final database = await db.openAppDatabase();
+  if (id == null) {
+    print('NudgeBg: null notification id, ignoring');
+    return;
+  }
   try {
-    final repo = ReminderRepository(database);
-    final all = await repo.getAll();
-    if (!all.any((e) => e.id == id)) return;
-    final actionId = response.actionId;
-    if (actionId == 'done') {
-      final r = all.firstWhere((e) => e.id == id);
-      await repo.update(r.copyWith(status: ReminderStatus.completed));
-      await NotificationService.cancel(id);
-    } else if (actionId == 'snooze') {
-      await NotificationService.cancel(id);
-      final updated = await repo.snooze(id);
-      await NotificationService.scheduleNext(updated);
-    } else {
-      final r = all.firstWhere((e) => e.id == id);
-      if (r.status == ReminderStatus.pending ||
-          r.status == ReminderStatus.due) {
-        await repo.update(r.copyWith(status: ReminderStatus.acknowledged));
+    print('NudgeBg: opening database for id=$id');
+    tz.initializeTimeZones();
+    final database = await db.openAppDatabase();
+    try {
+      final repo = ReminderRepository(database);
+      print('NudgeBg: loading reminders for id=$id');
+      final all = await repo.getAll();
+      if (!all.any((e) => e.id == id)) {
+        print('NudgeBg: id=$id not in database, ignoring');
+        return;
       }
+      final actionId = response.actionId;
+      if (actionId == 'done') {
+        print('NudgeBg: branch=done for id=$id');
+        final r = all.firstWhere((e) => e.id == id);
+        await repo.update(r.copyWith(status: ReminderStatus.completed));
+        print('NudgeBg: marked id=$id completed, cancelling notification');
+        await NotificationService.cancel(id);
+      } else if (actionId == 'snooze') {
+        print('NudgeBg: branch=snooze for id=$id');
+        print('NudgeBg: cancelling notification id=$id before snooze');
+        await NotificationService.cancel(id);
+        print('NudgeBg: snoozing id=$id in database');
+        final updated = await repo.snooze(id);
+        print('NudgeBg: rescheduling id=$id for ${updated.nextFireAt}');
+        await NotificationService.scheduleNext(updated);
+      } else {
+        print('NudgeBg: branch=tap (no action) for id=$id');
+        final r = all.firstWhere((e) => e.id == id);
+        if (r.status == ReminderStatus.pending ||
+            r.status == ReminderStatus.due) {
+          await repo.update(r.copyWith(status: ReminderStatus.acknowledged));
+          print('NudgeBg: marked id=$id acknowledged');
+        }
+      }
+    } finally {
+      await database.close();
     }
-  } finally {
-    await database.close();
+    print('NudgeBg: handled id=$id actionId=${response.actionId}');
+  } catch (e) {
+    print('NudgeBg: ERROR id=$id actionId=${response.actionId}: $e');
   }
 }
 
@@ -51,6 +81,7 @@ class NotificationService {
   static void Function(int id, String? actionId)? onAction;
 
   static void _onResponse(NotificationResponse response) {
+    print('NudgeFg: id=${response.id} actionId=${response.actionId}');
     final id = response.id;
     if (id != null) onAction?.call(id, response.actionId);
   }
@@ -62,7 +93,7 @@ class NotificationService {
     await _plugin.initialize(
       const InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: _onResponse,
-      onDidReceiveBackgroundNotificationResponse: _backgroundResponse,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
     await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
     await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestExactAlarmsPermission();
@@ -80,9 +111,13 @@ class NotificationService {
         channelDescription: 'Reminder notifications',
         importance: Importance.max,
         priority: Priority.high,
+        // showsUserInterface: false (the default, stated explicitly) keeps
+        // action taps on the background broadcast path instead of launching
+        // the app; the foreground/background handlers route on actionId.
         actions: <AndroidNotificationAction>[
-          AndroidNotificationAction('done', 'Done'),
-          AndroidNotificationAction('snooze', 'Snooze'),
+          AndroidNotificationAction('done', 'Done', showsUserInterface: false),
+          AndroidNotificationAction('snooze', 'Snooze',
+              showsUserInterface: false),
         ],
       ),
       iOS: DarwinNotificationDetails(),

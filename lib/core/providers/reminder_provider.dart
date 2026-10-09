@@ -43,8 +43,12 @@ class ReminderProvider extends ChangeNotifier {
     }
   }
 
+  /// Everything still needing the user's attention. Delivered/acknowledged
+  /// reminders stay visible until explicitly completed, snoozed (which
+  /// returns them to pending), or deleted — a bare notification tap must
+  /// never make a reminder vanish. Only completed reminders are hidden.
   List<Reminder> get upcoming {
-    final list = _reminders.where((r) => r.status == ReminderStatus.pending || r.status == ReminderStatus.due).toList();
+    final list = _reminders.where((r) => r.status != ReminderStatus.completed).toList();
     list.sort((a, b) {
       final at = a.nextFireAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bt = b.nextFireAt ?? DateTime.fromMillisecondsSinceEpoch(0);

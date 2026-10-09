@@ -141,4 +141,33 @@ void main() {
       expect(result, isNull);
     });
   });
+
+  group('snoozeDurationFor', () {
+    test('medication snoozes 15 minutes', () {
+      expect(
+        snoozeDurationFor(Category.medication),
+        equals(const Duration(minutes: 15)),
+      );
+    });
+
+    test('water snoozes 30 minutes', () {
+      expect(
+        snoozeDurationFor(Category.water),
+        equals(const Duration(minutes: 30)),
+      );
+    });
+
+    test('study, errand, and payment snooze 60 minutes', () {
+      const hour = Duration(minutes: 60);
+      expect(snoozeDurationFor(Category.study), equals(hour));
+      expect(snoozeDurationFor(Category.errand), equals(hour));
+      expect(snoozeDurationFor(Category.payment), equals(hour));
+    });
+
+    test('appointment and other fall back to 15 minutes', () {
+      const quarter = Duration(minutes: 15);
+      expect(snoozeDurationFor(Category.appointment), equals(quarter));
+      expect(snoozeDurationFor(Category.other), equals(quarter));
+    });
+  });
 }

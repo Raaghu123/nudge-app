@@ -1,5 +1,26 @@
 import 'package:nudge/core/models/reminder.dart';
 
+/// Snooze duration per category (UX.md section 4.3).
+///
+/// Medication snaps back quickly; water gets half an hour; study, errands,
+/// and payments get an hour. Anything else (appointments, uncategorised)
+/// falls back to the 15-minute default.
+Duration snoozeDurationFor(Category category) {
+  switch (category) {
+    case Category.medication:
+      return const Duration(minutes: 15);
+    case Category.water:
+      return const Duration(minutes: 30);
+    case Category.study:
+    case Category.errand:
+    case Category.payment:
+      return const Duration(minutes: 60);
+    case Category.appointment:
+    case Category.other:
+      return const Duration(minutes: 15);
+  }
+}
+
 DateTime? nextOccurrence({
   required DateTime now,
   required int hour,

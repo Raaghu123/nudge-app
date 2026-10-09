@@ -14,6 +14,8 @@ enum Recurrence {
 enum Category {
   /// Medication or health-related reminder.
   medication,
+  /// Water or hydration reminder.
+  water,
   /// Errand or chore reminder.
   errand,
   /// Study or learning reminder.

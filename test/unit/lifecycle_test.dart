@@ -6,11 +6,12 @@ import 'package:nudge/core/models/reminder.dart';
 ///
 /// The phase-1 provider maps onto this table:
 ///   acknowledge(id) → acknowledged, complete(id) → completed,
-///   snooze(id) → pending with nextFireAt +10 min.
+///   snooze(id) → pending with nextFireAt pushed by the per-category
+///   snooze duration (see snoozeDurationFor in recurrence.dart).
 ///
 /// Valid single-step transitions (given→expect):
 ///   pending→due, due→delivered, delivered→acknowledged, acknowledged→completed,
-///   plus snooze (due→due, +10 min).
+///   plus snooze (due→due, next fire pushed by category duration).
 
 /// Returns whether a transition from [from] to [to] is valid.
 /// Forward-only along the lifecycle order; staying in place (snooze) is valid.
@@ -43,7 +44,7 @@ void main() {
       );
     });
 
-    test('due → due (snooze, +10min) is valid', () {
+    test('due → due (snooze, pushed by category duration) is valid', () {
       expect(transition(ReminderStatus.due, ReminderStatus.due), isTrue);
     });
   });

@@ -256,6 +256,8 @@ class _CreateReminderScreenState extends State<CreateReminderScreen> {
     switch (category) {
       case Category.medication:
         return 'Medication';
+      case Category.water:
+        return 'Water';
       case Category.errand:
         return 'Errand';
       case Category.study:

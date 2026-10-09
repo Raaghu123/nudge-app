@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart' as sql;
 import 'package:nudge/core/models/reminder.dart';
+import 'package:nudge/core/recurrence.dart';
 import 'package:nudge/core/db/database_helper.dart' as db;
 
 class ReminderRepository {
@@ -33,7 +34,8 @@ class ReminderRepository {
   Future<Reminder> snooze(int id) async {
     final all = await getAll();
     final r = all.firstWhere((e) => e.id == id);
-    final next = (r.nextFireAt ?? DateTime.now()).add(const Duration(minutes: 10));
+    final next =
+        (r.nextFireAt ?? DateTime.now()).add(snoozeDurationFor(r.category));
     final updated = r.copyWith(nextFireAt: next, status: ReminderStatus.pending);
     await update(updated);
     return updated;

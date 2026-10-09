@@ -112,6 +112,9 @@ class ReminderProvider extends ChangeNotifier {
 
   Future<void> snooze(int id) async {
     await _ensureInit();
+    // Dismiss the fired notification first: rescheduling under the same id
+    // does not reliably clear what is already on screen.
+    await NotificationService.cancel(id);
     final updated = await _repo!.snooze(id);
     await NotificationService.scheduleNext(updated);
     _replace(updated);

@@ -15,7 +15,13 @@ t = m.read_text()
 perms = (
     '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
     '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n'
-    '    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>\n'
+    # NOTE: USE_EXACT_ALARM intentionally omitted. On Android 14+ it is
+    # restricted to clock/calendar apps; declaring it on this reminder app
+    # gets it silently rejected on Android 16 (OnePlus/OxygenOS confirmed),
+    # which downgrades exact alarms to inexact AND hides the app from the
+    # Alarms & reminders settings list. SCHEDULE_EXACT_ALARM alone keeps the
+    # toggle visible so the user can grant it; initialize() requests it via
+    # requestExactAlarmsPermission().
     '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n'
     '    <uses-permission android:name="android.permission.VIBRATE"/>\n'
     '    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n'

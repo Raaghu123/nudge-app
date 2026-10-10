@@ -149,7 +149,13 @@ class NotificationService {
       null,
       tzDate,
       details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      // alarmClock (AlarmManager.setAlarmClock) instead of exactAllowWhileIdle:
+      // OxygenOS 16 downgrades setExactAndAllowWhileIdle to an inexact,
+      // windowed alarm even with SCHEDULE_EXACT_ALARM granted and battery
+      // unrestricted. setAlarmClock is the same API real clock apps use and
+      // OEMs cannot window it. Trade-off: a status-bar alarm icon, which is
+      // acceptable for a reminder app.
+      androidScheduleMode: AndroidScheduleMode.alarmClock,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
     );

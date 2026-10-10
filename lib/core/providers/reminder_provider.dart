@@ -4,6 +4,7 @@ import 'package:nudge/core/recurrence.dart';
 import 'package:nudge/core/db/database_helper.dart';
 import 'package:nudge/core/repositories/reminder_repository.dart';
 import 'package:nudge/services/notification_service.dart';
+import 'package:nudge/services/oem_settings.dart';
 
 class ReminderProvider extends ChangeNotifier {
   ReminderRepository? _repo;
@@ -42,6 +43,11 @@ class ReminderProvider extends ChangeNotifier {
       await _initFuture;
     }
   }
+
+  /// Opens the OEM autostart / battery allowlist screen for this device
+  /// (app details page as fallback), so the user can exempt Nudge from
+  /// aggressive power management. Call path for future UI wiring.
+  Future<bool> openAutostartSettings() => OemSettings.openAutostartSettings();
 
   /// Everything still needing the user's attention. Delivered/acknowledged
   /// reminders stay visible until explicitly completed, snoozed (which

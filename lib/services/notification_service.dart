@@ -94,10 +94,27 @@ class NotificationService {
     if (id != null) onAction?.call(id, response.actionId);
   }
 
+  /// iOS notification category carrying the Done/Snooze actions. iOS
+  /// attaches actions via categories registered at init (unlike Android,
+  /// which puts them on each notification), and every scheduled
+  /// notification references this identifier. Keep in sync with the
+  /// categoryIdentifier in scheduleNext.
+  static const String _iosCategoryId = 'nudge_actions';
+
   static Future<void> initialize() async {
     tz.initializeTimeZones();
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings();
+    const iosInit = DarwinInitializationSettings(
+      notificationCategories: <DarwinNotificationCategory>{
+        DarwinNotificationCategory(
+          _iosCategoryId,
+          actions: <DarwinNotificationAction>[
+            DarwinNotificationAction.plain('done', 'Done'),
+            DarwinNotificationAction.plain('snooze', 'Snooze'),
+          ],
+        ),
+      },
+    );
     await _plugin.initialize(
       const InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: _onResponse,
@@ -141,7 +158,10 @@ class NotificationService {
               showsUserInterface: false),
         ],
       ),
-      iOS: DarwinNotificationDetails(),
+      // iOS shows the Done/Snooze buttons via the category registered at
+      // init; the action ids match the Android ones so the existing
+      // onAction routing handles both platforms unchanged.
+      iOS: DarwinNotificationDetails(categoryIdentifier: _iosCategoryId),
     );
     await _plugin.zonedSchedule(
       r.id ?? 0,

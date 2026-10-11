@@ -16,6 +16,13 @@ android/local.properties
 android/key.properties
 android/app/.cxx/
 
+# Never commit flutter-create output: CI regenerates the platform shell
+# (`flutter create --platforms android` + patch_android.py) on every run.
+# iOS ramp is after Phase 6; until then no ios/ in the repo.
+ios/
+.metadata
+pubspec.lock
+
 # Misc
 .DS_Store
 *.log

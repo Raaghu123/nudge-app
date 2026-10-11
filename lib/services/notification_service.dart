@@ -104,8 +104,10 @@ class NotificationService {
   static Future<void> initialize() async {
     tz.initializeTimeZones();
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings(
-      notificationCategories: <DarwinNotificationCategory>{
+    // Not const: DarwinNotificationAction.plain is a non-const factory, and
+    // notificationCategories takes a List.
+    final iosInit = DarwinInitializationSettings(
+      notificationCategories: <DarwinNotificationCategory>[
         DarwinNotificationCategory(
           _iosCategoryId,
           actions: <DarwinNotificationAction>[
@@ -113,10 +115,10 @@ class NotificationService {
             DarwinNotificationAction.plain('snooze', 'Snooze'),
           ],
         ),
-      },
+      ],
     );
     await _plugin.initialize(
-      const InitializationSettings(android: androidInit, iOS: iosInit),
+      InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: _onResponse,
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );

@@ -16,6 +16,10 @@ enum Category {
   medication,
   /// Water or hydration reminder.
   water,
+  /// Workout or movement reminder (added for the Phase 2.1 natural-language
+  /// parser; UI switches predate it — wire color/label handling when the
+  /// parser is connected to the UI).
+  exercise,
   /// Errand or chore reminder.
   errand,
   /// Study or learning reminder.
@@ -26,6 +30,22 @@ enum Category {
   payment,
   /// Any other reminder type.
   other,
+}
+
+/// How important a reminder is (Phase 2: set by the natural-language
+/// parser from per-category defaults, editable on the confirm screen).
+enum Importance {
+  low,
+  medium,
+  high,
+}
+
+/// How time-sensitive a reminder is (Phase 2: set by the natural-language
+/// parser from per-category defaults, editable on the confirm screen).
+enum Urgency {
+  low,
+  medium,
+  high,
 }
 
 /// Represents the current lifecycle state of a reminder.
@@ -60,6 +80,8 @@ class Reminder {
     this.nextFireAt,
     required this.createdAt,
     required this.updatedAt,
+    this.importance = Importance.medium,
+    this.urgency = Urgency.low,
   });
 
   /// Database primary key; null for new reminders not yet inserted.
@@ -96,6 +118,12 @@ class Reminder {
   /// Last modification timestamp in UTC.
   final DateTime updatedAt;
 
+  /// How important this reminder is. Defaults to medium.
+  final Importance importance;
+
+  /// How time-sensitive this reminder is. Defaults to low.
+  final Urgency urgency;
+
   /// Serializes this reminder to a JSON-compatible map.
   Map<String, dynamic> toJson() {
     return {
@@ -110,7 +138,25 @@ class Reminder {
       'next_fire_at': nextFireAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'importance': importance.name,
+      'urgency': urgency.name,
     };
+  }
+
+  /// Looks up [raw] in [values] by name, returning [fallback] when [raw]
+  /// is missing, null, or unknown (e.g. rows written before the column
+  /// existed).
+  static T _namedOr<T extends Enum>(
+    List<T> values,
+    Object? raw,
+    T fallback,
+  ) {
+    if (raw is String) {
+      for (final v in values) {
+        if (v.name == raw) return v;
+      }
+    }
+    return fallback;
   }
 
   /// Creates a [Reminder] from a JSON-compatible map.
@@ -127,6 +173,9 @@ class Reminder {
       nextFireAt: DateTime.tryParse(json['next_fire_at'] as String? ?? ''),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
+      importance:
+          _namedOr(Importance.values, json['importance'], Importance.medium),
+      urgency: _namedOr(Urgency.values, json['urgency'], Urgency.low),
     );
   }
 
@@ -145,6 +194,8 @@ class Reminder {
     DateTime? nextFireAt,
     DateTime? createdAt,
     DateTime? updatedAt,
+    Importance? importance,
+    Urgency? urgency,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -158,6 +209,8 @@ class Reminder {
       nextFireAt: nextFireAt ?? this.nextFireAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
+      importance: importance ?? this.importance,
+      urgency: urgency ?? this.urgency,
     );
   }
 }

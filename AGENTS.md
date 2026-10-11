@@ -38,8 +38,8 @@ Phase 1 — Basic Reminder App (in progress). Round 1 execution was rejected on 
 
 ## Environment & Build (this machine)
 
-- Flutter is **NOT installed** locally. Do not run `flutter` commands expecting them to work here.
-- Verify Flutter code via CI, not locally. CI workflow is written (`.github/workflows/build-apk.yml`, mirrors `hydration_reminder`): `flutter create .` → `patch_android.py` → `pub get` → `analyze` → `build apk --debug`. Repo: `https://github.com/Raaghu123/nudge-app` (private — Actions minutes count against the free-plan 2,000/mo quota shared with other private repos).
+- Flutter **IS installed** locally (`/opt/homebrew/bin/flutter`). Local `flutter analyze` and `flutter test` are the default verification loop for small changes — run them before every commit.
+- Reserve CI for full builds and cross-platform checks. CI workflow is written (`.github/workflows/build-apk.yml`, mirrors `hydration_reminder`): `flutter create .` → `patch_android.py` → `pub get` → `analyze` → `build apk --debug`. Repo: `https://github.com/Raaghu123/nudge-app` (private — Actions minutes count against the free-plan 2,000/mo quota shared with other private repos).
 - `android/` is never hand-committed; CI regenerates it via `flutter create` then applies a patch script. Do not hand-write manifests.
 - This repo lives under `/Users/rapid/Documents/Default Project/reminder-app/`. It is independent from the sibling `together-app` and `hydration_reminder` projects — do not wire into them.
 

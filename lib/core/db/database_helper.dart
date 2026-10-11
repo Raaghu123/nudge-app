@@ -14,16 +14,32 @@ class DatabaseSchema {
   static const String nextFireAt = 'next_fire_at';
   static const String createdAt = 'created_at';
   static const String updatedAt = 'updated_at';
+  static const String importance = 'importance';
+  static const String urgency = 'urgency';
 
-  static const String createTableSql = '''CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, hour INTEGER, minute INTEGER, recurrence TEXT, days_mask INTEGER, category TEXT, status TEXT, next_fire_at TEXT, created_at TEXT, updated_at TEXT)''';
+  static const String createTableSql = '''CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, hour INTEGER, minute INTEGER, recurrence TEXT, days_mask INTEGER, category TEXT, status TEXT, next_fire_at TEXT, created_at TEXT, updated_at TEXT, importance TEXT, urgency TEXT)''';
 }
 
 Future<sql.Database> openAppDatabase() async {
   final dir = await sql.getDatabasesPath();
   final path = p.join(dir, 'nudge.db');
-  return sql.openDatabase(path, version: 1, onCreate: (db, version) async {
-    await db.execute(DatabaseSchema.createTableSql);
-  });
+  return sql.openDatabase(
+    path,
+    version: 2,
+    onCreate: (db, version) async {
+      await db.execute(DatabaseSchema.createTableSql);
+    },
+    onUpgrade: (db, oldVersion, newVersion) async {
+      // v2: Phase 2 added importance/urgency. Existing rows keep NULL and
+      // Reminder.fromJson falls back to the field defaults.
+      if (oldVersion < 2) {
+        await db.execute(
+            'ALTER TABLE ${DatabaseSchema.table} ADD COLUMN ${DatabaseSchema.importance} TEXT');
+        await db.execute(
+            'ALTER TABLE ${DatabaseSchema.table} ADD COLUMN ${DatabaseSchema.urgency} TEXT');
+      }
+    },
+  );
 }
 
 Future<int> insertReminder(sql.Database db, Map<String, dynamic> data) => db.insert(DatabaseSchema.table, data);

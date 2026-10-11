@@ -9,9 +9,13 @@ import 'package:nudge/core/models/reminder.dart';
 ///   snooze(id) → pending with nextFireAt pushed by the per-category
 ///   snooze duration (see snoozeDurationFor in recurrence.dart).
 ///
-/// Valid single-step transitions (given→expect):
-///   pending→due, due→delivered, delivered→acknowledged, acknowledged→completed,
-///   plus snooze (due→due, next fire pushed by category duration).
+/// Any forward transition in enum order is valid (given→expect): the user
+/// can complete a reminder from the home screen or any UI surface without
+/// waiting for the notification to fire, so pending→completed is valid.
+/// `completed` is terminal for that occurrence; backward transitions are
+/// invalid (a recurrence reset creates a fresh instance, not a backward
+/// transition of the old one). Staying in place (snooze: due→due, next
+/// fire pushed by category duration) is valid.
 
 /// Returns whether a transition from [from] to [to] is valid.
 /// Forward-only along the lifecycle order; staying in place (snooze) is valid.
@@ -47,16 +51,23 @@ void main() {
     test('due → due (snooze, pushed by category duration) is valid', () {
       expect(transition(ReminderStatus.due, ReminderStatus.due), isTrue);
     });
-  });
 
-  group('Lifecycle invalid transitions', () {
-    test('pending → completed is invalid (skips intermediate states)', () {
+    test('pending → completed is valid (complete from any UI surface)', () {
       expect(
         transition(ReminderStatus.pending, ReminderStatus.completed),
-        isFalse,
+        isTrue,
       );
     });
 
+    test('due → completed is valid (complete without waiting)', () {
+      expect(
+        transition(ReminderStatus.due, ReminderStatus.completed),
+        isTrue,
+      );
+    });
+  });
+
+  group('Lifecycle invalid transitions', () {
     test('due → pending is invalid (goes backward)', () {
       expect(transition(ReminderStatus.due, ReminderStatus.pending), isFalse);
     });

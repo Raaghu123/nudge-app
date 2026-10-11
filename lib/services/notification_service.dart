@@ -3,7 +3,9 @@ import 'dart:ui';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:nudge/core/models/reminder.dart';
+// Hide the domain Importance: this file's `Importance.max` is the
+// flutter_local_notifications channel importance, not the reminder field.
+import 'package:nudge/core/models/reminder.dart' hide Importance;
 import 'package:nudge/core/db/database_helper.dart' as db;
 import 'package:nudge/core/repositories/reminder_repository.dart';
 

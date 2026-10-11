@@ -11,6 +11,7 @@ Duration snoozeDurationFor(Category category) {
       return const Duration(minutes: 15);
     case Category.water:
       return const Duration(minutes: 30);
+    case Category.exercise:
     case Category.study:
     case Category.errand:
     case Category.payment:

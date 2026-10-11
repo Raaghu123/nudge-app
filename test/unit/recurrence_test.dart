@@ -82,7 +82,7 @@ void main() {
   group('nextOccurrence weekly / custom', () {
     // Bit = 1 << DateTime.weekday (Mon=1 .. Sun=7).
     // Bits 1, 3, 5 = Mon, Wed, Fri.
-    const maskMonWedFri = 0b101010;
+    const maskMonWedFri = 42; // 0b101010 unsupported: bits 1, 3, 5.
 
     test('weekly: returns today when today matches the mask', () {
       // 2026-10-07 is a Wednesday.

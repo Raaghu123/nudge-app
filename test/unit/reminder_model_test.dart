@@ -177,4 +177,86 @@ void main() {
       );
     });
   });
+
+  group('importance and urgency (Phase 2.1)', () {
+    test('default to medium importance and low urgency', () {
+      final reminder = Reminder(
+        title: 'Test', hour: 8, minute: 0,
+        recurrence: Recurrence.once, daysMask: 0,
+        category: Category.other, status: ReminderStatus.pending,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      expect(reminder.importance, equals(Importance.medium));
+      expect(reminder.urgency, equals(Urgency.low));
+    });
+
+    test('round-trips importance and urgency through toJson/fromJson', () {
+      final original = Reminder(
+        title: 'Take medication', hour: 8, minute: 0,
+        recurrence: Recurrence.daily, daysMask: 0,
+        category: Category.medication, status: ReminderStatus.pending,
+        importance: Importance.high, urgency: Urgency.high,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      final parsed = Reminder.fromJson(original.toJson());
+      expect(parsed.importance, equals(Importance.high));
+      expect(parsed.urgency, equals(Urgency.high));
+    });
+
+    test('fromJson falls back to defaults for pre-v2 rows', () {
+      final reminder = Reminder.fromJson({
+        'id': 9,
+        'title': 'Old row',
+        'hour': 9,
+        'minute': 0,
+        'recurrence': 'once',
+        'days_mask': 0,
+        'category': 'other',
+        'status': 'pending',
+        'next_fire_at': null,
+        'created_at': '2026-10-06T10:00:00',
+        'updated_at': '2026-10-06T10:00:00',
+      });
+      expect(reminder.importance, equals(Importance.medium));
+      expect(reminder.urgency, equals(Urgency.low));
+    });
+
+    test('fromJson falls back on unknown enum names', () {
+      final reminder = Reminder.fromJson({
+        'id': 10,
+        'title': 'Odd row',
+        'hour': 9,
+        'minute': 0,
+        'recurrence': 'once',
+        'days_mask': 0,
+        'category': 'other',
+        'status': 'pending',
+        'next_fire_at': null,
+        'created_at': '2026-10-06T10:00:00',
+        'updated_at': '2026-10-06T10:00:00',
+        'importance': 'critical',
+        'urgency': 'asap',
+      });
+      expect(reminder.importance, equals(Importance.medium));
+      expect(reminder.urgency, equals(Urgency.low));
+    });
+
+    test('copyWith replaces importance and urgency', () {
+      final original = Reminder(
+        title: 'Test', hour: 8, minute: 0,
+        recurrence: Recurrence.once, daysMask: 0,
+        category: Category.other, status: ReminderStatus.pending,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      final updated = original.copyWith(
+        importance: Importance.high,
+        urgency: Urgency.high,
+      );
+      expect(updated.importance, equals(Importance.high));
+      expect(updated.urgency, equals(Urgency.high));
+    });
+  });
 }

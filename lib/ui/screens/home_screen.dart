@@ -143,6 +143,8 @@ class _CategoryBadge extends StatelessWidget {
         return Colors.red;
       case Category.water:
         return Colors.cyan;
+      case Category.exercise:
+        return Colors.teal;
       case Category.errand:
         return Colors.orange;
       case Category.study:
@@ -162,6 +164,8 @@ class _CategoryBadge extends StatelessWidget {
         return 'medication';
       case Category.water:
         return 'water';
+      case Category.exercise:
+        return 'exercise';
       case Category.errand:
         return 'errand';
       case Category.study:

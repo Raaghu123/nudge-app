@@ -63,6 +63,13 @@ class ReminderProvider extends ChangeNotifier {
     return list;
   }
 
+  /// Creates a reminder from the form or the natural-language capture UI.
+  ///
+  /// [importance]/[urgency] fall back to the model defaults when null, so
+  /// the form path (which omits them) is unchanged. [scheduledAt], when
+  /// provided by the NL parser, becomes [Reminder.nextFireAt] directly:
+  /// the parser distinguishes "at 3pm" from "tomorrow at 3pm" (both
+  /// hour=15, minute=0) and only scheduledAt carries that difference.
   Future<Reminder> addReminder({
     required String title,
     required int hour,
@@ -70,10 +77,14 @@ class ReminderProvider extends ChangeNotifier {
     required Recurrence recurrence,
     required int daysMask,
     required Category category,
+    Importance? importance,
+    Urgency? urgency,
+    DateTime? scheduledAt,
   }) async {
     await _ensureInit();
     final now = DateTime.now();
-    final next = nextOccurrence(now: now, hour: hour, minute: minute, recurrence: recurrence, daysMask: daysMask);
+    final next = scheduledAt ??
+        nextOccurrence(now: now, hour: hour, minute: minute, recurrence: recurrence, daysMask: daysMask);
     final r = Reminder(
       title: title,
       hour: hour,
@@ -85,6 +96,8 @@ class ReminderProvider extends ChangeNotifier {
       nextFireAt: next,
       createdAt: now,
       updatedAt: now,
+      importance: importance ?? Importance.medium,
+      urgency: urgency ?? Urgency.low,
     );
     final saved = await _repo!.insert(r);
     _reminders.add(saved);

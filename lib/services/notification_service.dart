@@ -6,6 +6,7 @@ import 'package:timezone/timezone.dart' as tz;
 // Hide the domain Importance: this file's `Importance.max` is the
 // flutter_local_notifications channel importance, not the reminder field.
 import 'package:nudge/core/models/reminder.dart' hide Importance;
+import 'package:nudge/core/recurrence.dart';
 import 'package:nudge/core/db/database_helper.dart' as db;
 import 'package:nudge/core/repositories/reminder_repository.dart';
 
@@ -96,12 +97,25 @@ class NotificationService {
     if (id != null) onAction?.call(id, response.actionId);
   }
 
-  /// iOS notification category carrying the Done/Snooze actions. iOS
-  /// attaches actions via categories registered at init (unlike Android,
-  /// which puts them on each notification), and every scheduled
-  /// notification references this identifier. Keep in sync with the
-  /// categoryIdentifier in scheduleNext.
-  static const String _iosCategoryId = 'nudge_actions';
+  /// iOS notification categories, one per distinct snooze duration (see
+  /// [iosSnoozeDurationsMinutes] in recurrence.dart). iOS attaches actions
+  /// via categories registered at init (unlike Android, which puts them
+  /// on each notification), has no nested submenus, and offers no
+  /// styled/primary button — both actions stay normal (never red).
+  /// Every scheduled notification references its duration's identifier
+  /// via iosCategoryIdFor in scheduleNext.
+  static List<DarwinNotificationCategory> _iosCategories() {
+    return <DarwinNotificationCategory>[
+      for (final minutes in iosSnoozeDurationsMinutes)
+        DarwinNotificationCategory(
+          'nudge_actions_$minutes',
+          actions: <DarwinNotificationAction>[
+            DarwinNotificationAction.plain('done', 'Mark done'),
+            DarwinNotificationAction.plain('snooze', iosSnoozeLabel(minutes)),
+          ],
+        ),
+    ];
+  }
 
   static Future<void> initialize() async {
     tz.initializeTimeZones();
@@ -109,15 +123,7 @@ class NotificationService {
     // Not const: DarwinNotificationAction.plain is a non-const factory, and
     // notificationCategories takes a List.
     final iosInit = DarwinInitializationSettings(
-      notificationCategories: <DarwinNotificationCategory>[
-        DarwinNotificationCategory(
-          _iosCategoryId,
-          actions: <DarwinNotificationAction>[
-            DarwinNotificationAction.plain('done', 'Done'),
-            DarwinNotificationAction.plain('snooze', 'Snooze'),
-          ],
-        ),
-      ],
+      notificationCategories: _iosCategories(),
     );
     await _plugin.initialize(
       InitializationSettings(android: androidInit, iOS: iosInit),
@@ -146,7 +152,9 @@ class NotificationService {
     // epoch here against the observed delivery time in logcat to tell an
     // app-side time bug apart from platform-side batching/delay.
     print('NudgeSched: scheduling id=${r.id} fireAt=${tzDate.toIso8601String()} epoch=${tzDate.millisecondsSinceEpoch}');
-    const details = NotificationDetails(
+    // Not const: the iOS categoryIdentifier varies per reminder category.
+    // The Android block is intentionally unchanged by the iOS polish.
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
         'nudge_reminders',
         'Reminders',
@@ -162,10 +170,12 @@ class NotificationService {
               showsUserInterface: false),
         ],
       ),
-      // iOS shows the Done/Snooze buttons via the category registered at
-      // init; the action ids match the Android ones so the existing
-      // onAction routing handles both platforms unchanged.
-      iOS: DarwinNotificationDetails(categoryIdentifier: _iosCategoryId),
+      // iOS shows the Mark done / Snooze <duration> buttons via the
+      // per-duration category registered at init; the action ids match
+      // the Android ones so the existing onAction routing handles both
+      // platforms unchanged.
+      iOS: DarwinNotificationDetails(
+          categoryIdentifier: iosCategoryIdFor(r.category)),
     );
     await _plugin.zonedSchedule(
       r.id ?? 0,

@@ -22,6 +22,36 @@ Duration snoozeDurationFor(Category category) {
   }
 }
 
+/// Distinct snooze durations (minutes) used for iOS notification
+/// categories. iOS has no nested action submenus, so each duration gets
+/// its own registered category with a pre-labelled Snooze action. Derived
+/// from [snoozeDurationFor]: medication/appointment/other 15m, water 30m,
+/// exercise/study/errand/payment 1h.
+const List<int> iosSnoozeDurationsMinutes = [15, 30, 60];
+
+/// Snooze button label for an iOS category: 15m/30m stay in minutes,
+/// whole hours use "1h", a full day would use "1d".
+String iosSnoozeLabel(int minutes) {
+  switch (minutes) {
+    case 60:
+      return 'Snooze 1h';
+    case 1440:
+      return 'Snooze 1d';
+    default:
+      return 'Snooze ${minutes}m';
+  }
+}
+
+/// iOS notification category id for a reminder's category, e.g.
+/// `nudge_actions_30`. Durations outside [iosSnoozeDurationsMinutes]
+/// fall back to the 15m category.
+String iosCategoryIdFor(Category category) {
+  final minutes = snoozeDurationFor(category).inMinutes;
+  final capped =
+      iosSnoozeDurationsMinutes.contains(minutes) ? minutes : 15;
+  return 'nudge_actions_$capped';
+}
+
 DateTime? nextOccurrence({
   required DateTime now,
   required int hour,

@@ -134,8 +134,7 @@ void main() {
         saved.nextFireAt,
         equals(nextOccurrence(
           now: before,
-          hour: 8,
-          minute: 0,
+          timesOfDayMinutes: [480],
           recurrence: Recurrence.daily,
           daysMask: 0,
         )),
@@ -196,8 +195,7 @@ void main() {
     test('intervalMinutes round-trips through toJson/fromJson', () {
       final reminder = Reminder(
         title: 'Drink water',
-        hour: 10,
-        minute: 30,
+        timesOfDayMinutes: [630],
         recurrence: Recurrence.interval,
         daysMask: 0,
         category: Category.water,
@@ -209,6 +207,62 @@ void main() {
       final restored = Reminder.fromJson(reminder.toJson());
       expect(restored.recurrence, equals(Recurrence.interval));
       expect(restored.intervalMinutes, equals(30));
+    });
+  });
+
+  group('addReminder rich time patterns', () {
+    test('multi-time daily stores the full list and survives reload', () async {
+      final provider = newProvider();
+      final saved = await provider.addReminder(
+        title: 'Drink water',
+        hour: 13,
+        minute: 0,
+        recurrence: Recurrence.daily,
+        daysMask: 0,
+        category: Category.water,
+        timesOfDayMinutes: [780, 960, 1200, 1380],
+      );
+
+      expect(saved.timesOfDayMinutes, equals([780, 960, 1200, 1380]));
+      expect(saved.hour, equals(13));
+
+      // A fresh provider re-reads from disk, proving the v4 column works.
+      final reloaded = newProvider();
+      await reloaded.addReminder(
+        title: 'Buy milk',
+        hour: 18,
+        minute: 0,
+        recurrence: Recurrence.once,
+        daysMask: 0,
+        category: Category.errand,
+      );
+      final water =
+          reloaded.upcoming.firstWhere((r) => r.title == 'Drink water');
+      expect(water.timesOfDayMinutes, equals([780, 960, 1200, 1380]));
+    });
+
+    test('windowed interval stores bounds and fires inside the window',
+        () async {
+      final provider = newProvider();
+      final saved = await provider.addReminder(
+        title: 'Drink water',
+        hour: 7,
+        minute: 0,
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        category: Category.water,
+        intervalMinutes: 30,
+        windowStartMinutes: 420,
+        windowEndMinutes: 1380,
+      );
+
+      expect(saved.intervalMinutes, equals(30));
+      expect(saved.windowStartMinutes, equals(420));
+      expect(saved.windowEndMinutes, equals(1380));
+      expect(saved.nextFireAt, isNotNull);
+      final fireMinutes =
+          saved.nextFireAt!.hour * 60 + saved.nextFireAt!.minute;
+      expect(fireMinutes >= 420 && fireMinutes <= 1380, isTrue);
     });
   });
 }

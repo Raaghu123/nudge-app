@@ -53,6 +53,9 @@ class _NlConfirmScreenState extends State<NlConfirmScreen> {
           urgency: _urgency,
           scheduledAt: parsed.scheduledAt,
           intervalMinutes: parsed.intervalMinutes,
+          timesOfDayMinutes: parsed.timesOfDayMinutes,
+          windowStartMinutes: parsed.windowStartMinutes,
+          windowEndMinutes: parsed.windowEndMinutes,
         );
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -299,19 +302,63 @@ bool _isSameDay(DateTime a, DateTime b) {
 
 /// Human-readable schedule line computed from the parsed fields.
 ///
-/// [Recurrence.interval] renders from [ParsedReminder.intervalMinutes]
-/// ("Every 1h", "Every 30m"); the first tick is already in scheduledAt
-/// and shown on the home screen after save.
+/// Plain [Recurrence.interval] renders short from
+/// [ParsedReminder.intervalMinutes] ("Every 1h", "Every 30m"); windowed
+/// intervals spell it out ("Every 30 minutes from 7:00 AM to 11:00 PM")
+/// and day restrictions append ("on Mon, Wed"). Multi-time days join
+/// every clock ("Every day at 1:00 PM, 4:00 PM"). The first fire is
+/// already in scheduledAt and shown on the home screen after save.
 String _whenLabel(ParsedReminder parsed) {
   final clock = _clockLabel(parsed.hour, parsed.minute);
+
+  String daySuffix() {
+    final days = <String>[];
+    for (var weekday = 1; weekday <= 7; weekday++) {
+      if ((parsed.daysMask & (1 << weekday)) != 0) {
+        days.add(_dayNames[weekday]);
+      }
+    }
+    if (days.isEmpty) return '';
+    return ' on ${days.join(', ')}';
+  }
+
+  String timesLabel() {
+    final times = parsed.timesOfDayMinutes;
+    if (times.length > 1) {
+      return times
+          .map((t) => _clockLabel(t ~/ 60, t % 60))
+          .join(', ');
+    }
+    return clock;
+  }
+
+  String intervalLabel(int? minutes, {required bool long}) {
+    if (minutes == null) return 'Every hour';
+    if (long) {
+      if (minutes % 60 == 0) {
+        final hours = minutes ~/ 60;
+        return hours == 1 ? 'Every hour' : 'Every $hours hours';
+      }
+      return minutes == 1 ? 'Every minute' : 'Every $minutes minutes';
+    }
+    if (minutes % 60 == 0) return 'Every ${minutes ~/ 60}h';
+    return 'Every ${minutes}m';
+  }
+
   switch (parsed.recurrence) {
     case Recurrence.interval:
-      final minutes = parsed.intervalMinutes;
-      if (minutes == null) return 'Every hour';
-      if (minutes % 60 == 0) return 'Every ${minutes ~/ 60}h';
-      return 'Every ${minutes}m';
+      final start = parsed.windowStartMinutes;
+      final end = parsed.windowEndMinutes;
+      final windowed = start != null && end != null;
+      final every =
+          intervalLabel(parsed.intervalMinutes, long: windowed);
+      final window = windowed
+          ? ' from ${_clockLabel(start ~/ 60, start % 60)}'
+              ' to ${_clockLabel(end ~/ 60, end % 60)}'
+          : '';
+      return '$every$window${daySuffix()}';
     case Recurrence.daily:
-      return 'Every day at $clock';
+      return 'Every day at ${timesLabel()}';
     case Recurrence.weekly:
     case Recurrence.custom:
       final days = <String>[];
@@ -320,8 +367,8 @@ String _whenLabel(ParsedReminder parsed) {
           days.add(_dayNames[weekday]);
         }
       }
-      if (days.isEmpty) return 'Every week at $clock';
-      return 'Every ${days.join(', ')} at $clock';
+      if (days.isEmpty) return 'Every week at ${timesLabel()}';
+      return 'Every ${days.join(', ')} at ${timesLabel()}';
     case Recurrence.once:
       final now = DateTime.now();
       final fireAt = parsed.scheduledAt;

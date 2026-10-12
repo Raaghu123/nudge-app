@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Defines how often a reminder repeats.
 enum Recurrence {
   /// Fires only once.
@@ -8,7 +10,10 @@ enum Recurrence {
   weekly,
   /// Fires on a custom set of weekdays defined by [Reminder.daysMask].
   custom,
-  /// Repeats every [Reminder.intervalMinutes] minutes from the last fire.
+  /// Repeats every [Reminder.intervalMinutes] minutes. Without a window
+  /// the next fire is always now + the interval; with
+  /// [Reminder.windowStartMinutes]/[Reminder.windowEndMinutes] fires are
+  /// the stateless ticks windowStart + N * interval inside the window.
   interval,
 }
 
@@ -70,11 +75,14 @@ class Reminder {
   ///
   /// The [id] and [nextFireAt] fields are optional; the database assigns [id]
   /// and the scheduler computes [nextFireAt].
-  const Reminder({
+  ///
+  /// [timesOfDayMinutes] is normalized to a sorted unique list. It must
+  /// hold at least one entry in 0..1439 (enforced by assert; producers
+  /// such as the NL parser and [Reminder.fromJson] normalize first).
+  Reminder({
     this.id,
     required this.title,
-    required this.hour,
-    required this.minute,
+    required List<int> timesOfDayMinutes,
     required this.recurrence,
     required this.daysMask,
     required this.category,
@@ -85,7 +93,14 @@ class Reminder {
     this.importance = Importance.medium,
     this.urgency = Urgency.low,
     this.intervalMinutes,
-  });
+    this.windowStartMinutes,
+    this.windowEndMinutes,
+  })  : assert(timesOfDayMinutes.isNotEmpty,
+            'timesOfDayMinutes needs at least one entry'),
+        assert(
+            timesOfDayMinutes.every((t) => t >= 0 && t < 1440),
+            'timesOfDayMinutes entries must be minutes since midnight'),
+        timesOfDayMinutes = _normalizedTimes(timesOfDayMinutes);
 
   /// Database primary key; null for new reminders not yet inserted.
   final int? id;
@@ -93,17 +108,25 @@ class Reminder {
   /// User-visible title of the reminder.
   final String title;
 
-  /// Hour of day in 24-hour format (0–23).
-  final int hour;
+  /// Fire times as minutes since midnight, sorted unique, each 0..1439.
+  /// For daily/weekly/custom these are the times of day; for interval
+  /// reminders the list is informational ([hour]/[minute] = first tick).
+  final List<int> timesOfDayMinutes;
 
-  /// Minute of hour (0–59).
-  final int minute;
+  /// Hour of day in 24-hour format (0–23), derived from the first entry
+  /// of [timesOfDayMinutes] so existing read sites keep working.
+  int get hour => timesOfDayMinutes[0] ~/ 60;
+
+  /// Minute of hour (0–59), derived from the first entry of
+  /// [timesOfDayMinutes] so existing read sites keep working.
+  int get minute => timesOfDayMinutes[0] % 60;
 
   /// How often the reminder repeats.
   final Recurrence recurrence;
 
   /// Bitmask of weekdays when the reminder fires.
   /// Bit i corresponds to DateTime.weekday value i (Monday=1 ... Sunday=7).
+  /// Also applies to [Recurrence.interval] (0 = all days).
   final int daysMask;
 
   /// Category for grouping and filtering.
@@ -130,6 +153,21 @@ class Reminder {
   /// Repeat interval in minutes for [Recurrence.interval]; null otherwise.
   final int? intervalMinutes;
 
+  /// Window start as minutes since midnight, only with
+  /// [Recurrence.interval]; null means no window.
+  final int? windowStartMinutes;
+
+  /// Window end as minutes since midnight, only with
+  /// [Recurrence.interval]; null means no window. Must be greater than
+  /// [windowStartMinutes] (windows wrapping midnight are deferred).
+  final int? windowEndMinutes;
+
+  /// Sorts and dedupes a raw times list for the constructor.
+  static List<int> _normalizedTimes(List<int> times) {
+    final sorted = times.toSet().toList()..sort();
+    return sorted;
+  }
+
   /// Serializes this reminder to a JSON-compatible map.
   Map<String, dynamic> toJson() {
     return {
@@ -137,6 +175,7 @@ class Reminder {
       'title': title,
       'hour': hour,
       'minute': minute,
+      'times_of_day_minutes': jsonEncode(timesOfDayMinutes),
       'recurrence': recurrence.name,
       'days_mask': daysMask,
       'category': category.name,
@@ -147,6 +186,8 @@ class Reminder {
       'importance': importance.name,
       'urgency': urgency.name,
       'interval_minutes': intervalMinutes,
+      'window_start_minutes': windowStartMinutes,
+      'window_end_minutes': windowEndMinutes,
     };
   }
 
@@ -166,13 +207,33 @@ class Reminder {
     return fallback;
   }
 
+  /// Decodes the v4 times list; falls back to the legacy hour/minute
+  /// columns for rows written before the v4 migration.
+  static List<int> _decodeTimes(Object? raw, int hour, int minute) {
+    if (raw is String) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          final times = decoded.whereType<int>().toList();
+          if (times.isNotEmpty) return times;
+        }
+      } on FormatException {
+        // Corrupt payload: fall through to the legacy columns.
+      }
+    }
+    return [hour * 60 + minute];
+  }
+
   /// Creates a [Reminder] from a JSON-compatible map.
   factory Reminder.fromJson(Map<String, dynamic> json) {
     return Reminder(
       id: json['id'] as int?,
       title: json['title'] as String,
-      hour: json['hour'] as int,
-      minute: json['minute'] as int,
+      timesOfDayMinutes: _decodeTimes(
+        json['times_of_day_minutes'],
+        json['hour'] as int,
+        json['minute'] as int,
+      ),
       recurrence: Recurrence.values.byName(json['recurrence'] as String),
       daysMask: json['days_mask'] as int,
       category: Category.values.byName(json['category'] as String),
@@ -184,6 +245,8 @@ class Reminder {
           _namedOr(Importance.values, json['importance'], Importance.medium),
       urgency: _namedOr(Urgency.values, json['urgency'], Urgency.low),
       intervalMinutes: json['interval_minutes'] as int?,
+      windowStartMinutes: json['window_start_minutes'] as int?,
+      windowEndMinutes: json['window_end_minutes'] as int?,
     );
   }
 
@@ -193,8 +256,7 @@ class Reminder {
   Reminder copyWith({
     int? id,
     String? title,
-    int? hour,
-    int? minute,
+    List<int>? timesOfDayMinutes,
     Recurrence? recurrence,
     int? daysMask,
     Category? category,
@@ -205,12 +267,13 @@ class Reminder {
     Importance? importance,
     Urgency? urgency,
     int? intervalMinutes,
+    int? windowStartMinutes,
+    int? windowEndMinutes,
   }) {
     return Reminder(
       id: id ?? this.id,
       title: title ?? this.title,
-      hour: hour ?? this.hour,
-      minute: minute ?? this.minute,
+      timesOfDayMinutes: timesOfDayMinutes ?? this.timesOfDayMinutes,
       recurrence: recurrence ?? this.recurrence,
       daysMask: daysMask ?? this.daysMask,
       category: category ?? this.category,
@@ -221,6 +284,8 @@ class Reminder {
       importance: importance ?? this.importance,
       urgency: urgency ?? this.urgency,
       intervalMinutes: intervalMinutes ?? this.intervalMinutes,
+      windowStartMinutes: windowStartMinutes ?? this.windowStartMinutes,
+      windowEndMinutes: windowEndMinutes ?? this.windowEndMinutes,
     );
   }
 }

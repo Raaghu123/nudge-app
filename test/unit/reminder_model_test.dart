@@ -6,8 +6,7 @@ void main() {
     test('title is required by the form layer, model holds it verbatim', () {
       final reminder = Reminder(
         title: 'Take medication',
-        hour: 8,
-        minute: 0,
+        timesOfDayMinutes: [480],
         recurrence: Recurrence.once,
         daysMask: 0,
         category: Category.medication,
@@ -23,13 +22,13 @@ void main() {
 
     test('hour accepts boundary values 0 and 23', () {
       final midnight = Reminder(
-        title: 'Test', hour: 0, minute: 0,
+        title: 'Test', timesOfDayMinutes: [0],
         recurrence: Recurrence.once, daysMask: 0,
         category: Category.other, status: ReminderStatus.pending,
         createdAt: DateTime.now(), updatedAt: DateTime.now(),
       );
       final late = Reminder(
-        title: 'Test', hour: 23, minute: 0,
+        title: 'Test', timesOfDayMinutes: [1380],
         recurrence: Recurrence.once, daysMask: 0,
         category: Category.other, status: ReminderStatus.pending,
         createdAt: DateTime.now(), updatedAt: DateTime.now(),
@@ -40,13 +39,13 @@ void main() {
 
     test('minute accepts boundary values 0 and 59', () {
       final start = Reminder(
-        title: 'Test', hour: 8, minute: 0,
+        title: 'Test', timesOfDayMinutes: [480],
         recurrence: Recurrence.once, daysMask: 0,
         category: Category.other, status: ReminderStatus.pending,
         createdAt: DateTime.now(), updatedAt: DateTime.now(),
       );
       final end = Reminder(
-        title: 'Test', hour: 8, minute: 59,
+        title: 'Test', timesOfDayMinutes: [539],
         recurrence: Recurrence.once, daysMask: 0,
         category: Category.other, status: ReminderStatus.pending,
         createdAt: DateTime.now(), updatedAt: DateTime.now(),
@@ -61,8 +60,7 @@ void main() {
       final original = Reminder(
         id: 7,
         title: 'Take medication',
-        hour: 8,
-        minute: 0,
+        timesOfDayMinutes: [480],
         recurrence: Recurrence.daily,
         daysMask: 0,
         category: Category.medication,
@@ -133,8 +131,7 @@ void main() {
     test('toJson writes null next_fire_at when nextFireAt is null', () {
       final reminder = Reminder(
         title: 'Test',
-        hour: 9,
-        minute: 15,
+        timesOfDayMinutes: [555],
         recurrence: Recurrence.once,
         daysMask: 0,
         category: Category.appointment,
@@ -155,8 +152,7 @@ void main() {
       final original = Reminder(
         id: 5,
         title: 'Test',
-        hour: 8,
-        minute: 0,
+        timesOfDayMinutes: [480],
         recurrence: Recurrence.once,
         daysMask: 0,
         category: Category.other,
@@ -181,7 +177,7 @@ void main() {
   group('importance and urgency (Phase 2.1)', () {
     test('default to medium importance and low urgency', () {
       final reminder = Reminder(
-        title: 'Test', hour: 8, minute: 0,
+        title: 'Test', timesOfDayMinutes: [480],
         recurrence: Recurrence.once, daysMask: 0,
         category: Category.other, status: ReminderStatus.pending,
         createdAt: DateTime.parse('2026-10-06T10:00:00'),
@@ -193,7 +189,8 @@ void main() {
 
     test('round-trips importance and urgency through toJson/fromJson', () {
       final original = Reminder(
-        title: 'Take medication', hour: 8, minute: 0,
+        title: 'Take medication',
+        timesOfDayMinutes: [480],
         recurrence: Recurrence.daily, daysMask: 0,
         category: Category.medication, status: ReminderStatus.pending,
         importance: Importance.high, urgency: Urgency.high,
@@ -245,7 +242,7 @@ void main() {
 
     test('copyWith replaces importance and urgency', () {
       final original = Reminder(
-        title: 'Test', hour: 8, minute: 0,
+        title: 'Test', timesOfDayMinutes: [480],
         recurrence: Recurrence.once, daysMask: 0,
         category: Category.other, status: ReminderStatus.pending,
         createdAt: DateTime.parse('2026-10-06T10:00:00'),
@@ -257,6 +254,68 @@ void main() {
       );
       expect(updated.importance, equals(Importance.high));
       expect(updated.urgency, equals(Urgency.high));
+    });
+  });
+
+  group('v4 rich time patterns', () {
+    test('normalizes times to sorted unique', () {
+      final reminder = Reminder(
+        title: 'Test', timesOfDayMinutes: [1200, 480, 480],
+        recurrence: Recurrence.daily, daysMask: 0,
+        category: Category.other, status: ReminderStatus.pending,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      expect(reminder.timesOfDayMinutes, equals([480, 1200]));
+    });
+
+    test('hour/minute derive from the first entry', () {
+      final reminder = Reminder(
+        title: 'Test', timesOfDayMinutes: [1380, 480],
+        recurrence: Recurrence.daily, daysMask: 0,
+        category: Category.other, status: ReminderStatus.pending,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      expect(reminder.hour, equals(8));
+      expect(reminder.minute, equals(0));
+    });
+
+    test('round-trips times and window through toJson/fromJson', () {
+      final original = Reminder(
+        title: 'Drink water', timesOfDayMinutes: [780, 960, 1200, 1380],
+        recurrence: Recurrence.interval, daysMask: 62,
+        category: Category.water, status: ReminderStatus.pending,
+        intervalMinutes: 30,
+        windowStartMinutes: 420,
+        windowEndMinutes: 1380,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      final parsed = Reminder.fromJson(original.toJson());
+      expect(parsed.timesOfDayMinutes, equals([780, 960, 1200, 1380]));
+      expect(parsed.intervalMinutes, equals(30));
+      expect(parsed.windowStartMinutes, equals(420));
+      expect(parsed.windowEndMinutes, equals(1380));
+    });
+
+    test('fromJson falls back to legacy hour/minute for pre-v4 rows', () {
+      final reminder = Reminder.fromJson({
+        'id': 11,
+        'title': 'Old row',
+        'hour': 8,
+        'minute': 30,
+        'recurrence': 'daily',
+        'days_mask': 0,
+        'category': 'water',
+        'status': 'pending',
+        'next_fire_at': null,
+        'created_at': '2026-10-06T10:00:00',
+        'updated_at': '2026-10-06T10:00:00',
+      });
+      expect(reminder.timesOfDayMinutes, equals([510]));
+      expect(reminder.windowStartMinutes, isNull);
+      expect(reminder.windowEndMinutes, isNull);
     });
   });
 }

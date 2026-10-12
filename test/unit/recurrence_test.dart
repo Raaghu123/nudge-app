@@ -8,8 +8,7 @@ void main() {
       final now = DateTime(2026, 10, 6, 10, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 14,
-        minute: 0,
+        timesOfDayMinutes: [840],
         recurrence: Recurrence.once,
         daysMask: 0,
       );
@@ -20,8 +19,7 @@ void main() {
       final now = DateTime(2026, 10, 6, 10, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: [600],
         recurrence: Recurrence.once,
         daysMask: 0,
       );
@@ -32,8 +30,7 @@ void main() {
       final now = DateTime(2026, 10, 6, 10, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 8,
-        minute: 0,
+        timesOfDayMinutes: [480],
         recurrence: Recurrence.once,
         daysMask: 0,
       );
@@ -46,8 +43,7 @@ void main() {
       final now = DateTime(2026, 10, 6, 6, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 9,
-        minute: 0,
+        timesOfDayMinutes: [540],
         recurrence: Recurrence.daily,
         daysMask: 0,
       );
@@ -58,8 +54,7 @@ void main() {
       final now = DateTime(2026, 10, 6, 8, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 8,
-        minute: 0,
+        timesOfDayMinutes: [480],
         recurrence: Recurrence.daily,
         daysMask: 0,
       );
@@ -70,8 +65,7 @@ void main() {
       final now = DateTime(2026, 10, 6, 23, 1);
       final result = nextOccurrence(
         now: now,
-        hour: 23,
-        minute: 0,
+        timesOfDayMinutes: [1380],
         recurrence: Recurrence.daily,
         daysMask: 0,
       );
@@ -89,8 +83,7 @@ void main() {
       final now = DateTime(2026, 10, 7, 8, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: [600],
         recurrence: Recurrence.weekly,
         daysMask: maskMonWedFri,
       );
@@ -102,8 +95,7 @@ void main() {
       final now = DateTime(2026, 10, 8, 8, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: [600],
         recurrence: Recurrence.weekly,
         daysMask: maskMonWedFri,
       );
@@ -114,15 +106,13 @@ void main() {
       final now = DateTime(2026, 10, 8, 8, 0);
       final weekly = nextOccurrence(
         now: now,
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: [600],
         recurrence: Recurrence.weekly,
         daysMask: maskMonWedFri,
       );
       final custom = nextOccurrence(
         now: now,
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: [600],
         recurrence: Recurrence.custom,
         daysMask: maskMonWedFri,
       );
@@ -133,8 +123,7 @@ void main() {
       final now = DateTime(2026, 10, 6, 8, 0);
       final result = nextOccurrence(
         now: now,
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: [600],
         recurrence: Recurrence.weekly,
         daysMask: 0,
       );
@@ -143,16 +132,13 @@ void main() {
   });
 
   group('nextOccurrence interval', () {
-    test('interval 60 from a known lastFire returns exactly +60 min', () {
-      final lastFire = DateTime(2026, 10, 6, 10, 0);
+    test('interval 60 with no window returns now + 60 min', () {
       final result = nextOccurrence(
-        now: DateTime(2026, 10, 6, 10, 30),
-        hour: 10,
-        minute: 0,
+        now: DateTime(2026, 10, 6, 10, 0),
+        timesOfDayMinutes: const [],
         recurrence: Recurrence.interval,
         daysMask: 0,
         intervalMinutes: 60,
-        lastFire: lastFire,
       );
       expect(result, equals(DateTime(2026, 10, 6, 11, 0)));
     });
@@ -160,11 +146,9 @@ void main() {
     test('null intervalMinutes returns null (once-like defensive)', () {
       final result = nextOccurrence(
         now: DateTime(2026, 10, 6, 10, 30),
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: const [],
         recurrence: Recurrence.interval,
         daysMask: 0,
-        lastFire: DateTime(2026, 10, 6, 10, 0),
       );
       expect(result, isNull);
     });
@@ -172,14 +156,91 @@ void main() {
     test('zero intervalMinutes returns null (no tight loop)', () {
       final result = nextOccurrence(
         now: DateTime(2026, 10, 6, 10, 30),
-        hour: 10,
-        minute: 0,
+        timesOfDayMinutes: const [],
         recurrence: Recurrence.interval,
         daysMask: 0,
         intervalMinutes: 0,
-        lastFire: DateTime(2026, 10, 6, 10, 0),
       );
       expect(result, isNull);
+    });
+  });
+
+  group('nextOccurrence multi-time daily', () {
+    const times = [780, 960, 1200, 1380]; // 1pm, 4pm, 8pm, 11pm.
+
+    test('picks the next time later today', () {
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 14, 0),
+        timesOfDayMinutes: times,
+        recurrence: Recurrence.daily,
+        daysMask: 0,
+      );
+      expect(result, equals(DateTime(2026, 10, 6, 16, 0)));
+    });
+
+    test('rolls to the first time tomorrow when today is exhausted', () {
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 23, 30),
+        timesOfDayMinutes: times,
+        recurrence: Recurrence.daily,
+        daysMask: 0,
+      );
+      expect(result, equals(DateTime(2026, 10, 7, 13, 0)));
+    });
+  });
+
+  group('nextOccurrence windowed interval', () {
+    test('rounds up to the next tick inside the window', () {
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 7, 14),
+        timesOfDayMinutes: const [],
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        intervalMinutes: 30,
+        windowStartMinutes: 420,
+        windowEndMinutes: 1380,
+      );
+      expect(result, equals(DateTime(2026, 10, 6, 7, 30)));
+    });
+
+    test('last tick lands exactly on the window end', () {
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 22, 47),
+        timesOfDayMinutes: const [],
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        intervalMinutes: 30,
+        windowStartMinutes: 420,
+        windowEndMinutes: 1380,
+      );
+      expect(result, equals(DateTime(2026, 10, 6, 23, 0)));
+    });
+
+    test('rolls to window start tomorrow when today is exhausted', () {
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 23, 15),
+        timesOfDayMinutes: const [],
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        intervalMinutes: 30,
+        windowStartMinutes: 420,
+        windowEndMinutes: 1380,
+      );
+      expect(result, equals(DateTime(2026, 10, 7, 7, 0)));
+    });
+
+    test('skips masked-out days to the next valid window', () {
+      // 2026-10-10 is a Saturday; mask 62 = Mon-Fri.
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 10, 10, 0),
+        timesOfDayMinutes: const [],
+        recurrence: Recurrence.interval,
+        daysMask: 62,
+        intervalMinutes: 120,
+        windowStartMinutes: 540,
+        windowEndMinutes: 1080,
+      );
+      expect(result, equals(DateTime(2026, 10, 12, 9, 0)));
     });
   });
 

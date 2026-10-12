@@ -22,6 +22,9 @@ class ParsedReminder {
     required this.urgency,
     required this.scheduledAt,
     this.intervalMinutes,
+    this.timesOfDayMinutes = const [],
+    this.windowStartMinutes,
+    this.windowEndMinutes,
   });
 
   /// Reminder title with command prefixes and time/recurrence expressions
@@ -38,9 +41,10 @@ class ParsedReminder {
   /// Minute of hour (0-59).
   final int minute;
 
-  /// 1.0 explicit am/pm, 0.8 tomorrow/tonight or bare "at X",
-  /// 0.7 relative ("in N minutes/hours"), 0.5 inferred (time-of-day
-  /// word, category default, or bare default).
+  /// 1.0 explicit am/pm, 0.9 all-explicit time list, 0.85 window with
+  /// explicit bounds, 0.8 tomorrow/tonight, bare "at X", or partially
+  /// bare list, 0.7 relative ("in N minutes/hours"), 0.5 inferred
+  /// (time-of-day word, category default, or bare default).
   final double timeConfidence;
 
   /// Detected recurrence.
@@ -75,6 +79,18 @@ class ParsedReminder {
   /// -> 60); null for every other recurrence. The first tick is already
   /// in [scheduledAt] (now + this offset).
   final int? intervalMinutes;
+
+  /// Specific fire times as minutes since midnight, sorted unique. Set
+  /// for multi-time phrases ("at 8am and 8pm"); single times also land
+  /// here as a one-entry list. Empty for interval reminders.
+  final List<int> timesOfDayMinutes;
+
+  /// Window bounds as minutes since midnight, only with
+  /// [Recurrence.interval] ("between 7am and 11pm"); null otherwise.
+  final int? windowStartMinutes;
+
+  /// Window end, see [windowStartMinutes].
+  final int? windowEndMinutes;
 }
 
 /// Deterministic rule-based parser for natural-language reminders.
@@ -86,11 +102,16 @@ class ParsedReminder {
 /// Pattern table (owner-authorized):
 /// - Title: strips "remind me to", "remind me", "remind to",
 ///   "don't forget to", "i need to", "i have to".
-/// - Time: "at X", "at Xam/pm", "at HH:MM", "in N minutes/hours",
-///   "tomorrow", "tomorrow at X", "tonight", "this morning/afternoon/
+/// - Time: "at X", "at Xam/pm", "at HH:MM", multi-time lists
+///   ("at 1pm, 4pm and 11pm"), windows ("between 7am and 11pm",
+///   "from 9am to 6pm"), "in N minutes/hours", "tomorrow",
+///   "tomorrow at X", "tonight", "this morning/afternoon/
 ///   evening/night", bare time-of-day words.
 /// - Recurrence: "every morning/night/evening/day", "every weekday",
-///   "every <day name>", "every hour", "every N minutes".
+///   "every <day name>", "every hour", "every N minutes",
+///   "every half hour", "every 45m"/"every 2h" shorthands; intervals
+///   compose with windows and day restrictions ("every 2 hours from
+///   9am-6pm weekdays", "every hour on Mondays").
 /// - Category keywords per table below.
 /// - Category default times and importance/urgency defaults per table.
 ///
@@ -98,8 +119,8 @@ class ParsedReminder {
 /// - Sub-daily intervals ("every hour", "every N minutes") parse to
 ///   [Recurrence.interval] with [ParsedReminder.intervalMinutes] set and
 ///   [ParsedReminder.scheduledAt] holding the first tick.
-/// - Twice-daily phrasing ("every morning and night") keeps the first
-///   time-of-day hint only.
+/// - "every N days", midnight-wrapping windows, and open-ended windows
+///   are not parsed (left in the title).
 class NlParser {
   /// Parses [input] into a [ParsedReminder].
   ///
@@ -142,22 +163,75 @@ class NlParser {
     final int hour;
     final int minute;
     final DateTime scheduledAt;
+    final List<int> timesOfDay;
+    int? windowStart;
+    int? windowEnd;
+    var recurrence = recurrenceHit.recurrence;
+    var daysMask = recurrenceHit.daysMask;
+    var recurrenceConfidence = recurrenceHit.confidence;
     if (timeHit.relativeMinutes != null) {
       final base = ref.add(Duration(minutes: timeHit.relativeMinutes!));
       hour = base.hour;
       minute = base.minute;
       scheduledAt = base;
+      timesOfDay = const [];
+    } else if (timeHit.windowStart != null &&
+        recurrenceHit.recurrence == Recurrence.interval) {
+      // Windowed interval: first stateless tick at/after now.
+      windowStart = timeHit.windowStart;
+      windowEnd = timeHit.windowEnd;
+      final first = nextOccurrence(
+            now: ref,
+            timesOfDayMinutes: const [],
+            recurrence: Recurrence.interval,
+            daysMask: daysMask,
+            intervalMinutes: recurrenceHit.intervalMinutes,
+            windowStartMinutes: windowStart,
+            windowEndMinutes: windowEnd,
+          ) ??
+          // Provably unreachable with a valid window (some day in any
+          // 8-day span accepts), but never return null: roll to
+          // tomorrow's window start.
+          DateTime(ref.year, ref.month, ref.day + 1, windowStart! ~/ 60,
+              windowStart % 60);
+      hour = first.hour;
+      minute = first.minute;
+      scheduledAt = first;
+      timesOfDay = const [];
+    } else if (timeHit.times != null && timeHit.times!.length > 1) {
+      // Multi-time list: daily by implication, or weekly/custom when a
+      // day restriction was named and no stronger recurrence was found.
+      timesOfDay = List<int>.of(timeHit.times!.toSet().toList())..sort();
+      if (timeHit.dayMaskOverride != 0 &&
+          recurrence == Recurrence.once) {
+        daysMask = timeHit.dayMaskOverride;
+        final single = (daysMask & (daysMask - 1)) == 0;
+        recurrence = single ? Recurrence.weekly : Recurrence.custom;
+        recurrenceConfidence = 0.9;
+      } else if (recurrence == Recurrence.once) {
+        recurrence = Recurrence.daily;
+        recurrenceConfidence = 0.8;
+      }
+      hour = timesOfDay.first ~/ 60;
+      minute = timesOfDay.first % 60;
+      scheduledAt = nextOccurrence(
+            now: ref,
+            timesOfDayMinutes: timesOfDay,
+            recurrence: recurrence,
+            daysMask: daysMask,
+          ) ??
+          DateTime(ref.year, ref.month, ref.day + 1, hour, minute);
     } else {
       hour = timeHit.hour;
       minute = timeHit.minute;
+      timesOfDay = [hour * 60 + minute];
       DateTime base;
       if (timeHit.isTomorrow) {
         base = DateTime(ref.year, ref.month, ref.day + 1, hour, minute);
       } else {
         base = nextOccurrence(
               now: ref,
-              hour: hour,
-              minute: minute,
+              timesOfDayMinutes: timesOfDay,
               recurrence: recurrenceHit.recurrence,
               daysMask: recurrenceHit.daysMask,
             ) ??
@@ -191,6 +265,10 @@ class NlParser {
               RegExp(r'[.,!;:\s]+$'),
               '',
             );
+    // Dangling infinitive marker left when the time phrase sat between
+    // the prefix and the topic ("remind me at 8am ... to take my
+    // medicine"): "to take my medicine" -> "take my medicine".
+    title = title.replaceFirst(RegExp(r'^to\s+', caseSensitive: false), '');
     if (title.isEmpty) {
       title = 'Reminder';
       titleConfidence = 0.5;
@@ -202,15 +280,18 @@ class NlParser {
       hour: hour,
       minute: minute,
       timeConfidence: timeHit.confidence,
-      recurrence: recurrenceHit.recurrence,
-      daysMask: recurrenceHit.daysMask,
-      recurrenceConfidence: recurrenceHit.confidence,
+      recurrence: recurrence,
+      daysMask: daysMask,
+      recurrenceConfidence: recurrenceConfidence,
       category: categoryHit.category,
       categoryConfidence: categoryHit.confidence,
       importance: _importanceFor(categoryHit.category),
       urgency: _urgencyFor(categoryHit.category),
       scheduledAt: scheduledAt,
       intervalMinutes: recurrenceHit.intervalMinutes,
+      timesOfDayMinutes: timesOfDay,
+      windowStartMinutes: windowStart,
+      windowEndMinutes: windowEnd,
     );
   }
 
@@ -237,10 +318,6 @@ class NlParser {
     r'\bthis\s+(morning|afternoon|evening|night)\b',
   );
 
-  static final RegExp _atTimePattern = RegExp(
-    r'\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b',
-  );
-
   static final RegExp _barePartPattern =
       RegExp(r'\b(morning|afternoon|evening|night)\b');
 
@@ -257,8 +334,30 @@ class NlParser {
   static final RegExp _everyWeekendPattern =
       RegExp(r'\bevery\s+weekends?\b|\bweekends?\b');
 
+  /// Groups 1-2 = amount + unit, 3 = "45m" shorthand amount,
+  /// 4 = "2h" shorthand amount.
   static final RegExp _intervalPattern = RegExp(
-    r'\bevery\s+(\d+)\s*(minutes?|mins?|hours?|hrs?)\b|\bevery\s+hour\b|\bhourly\b',
+    r'\bevery\s+(\d+)\s*(minutes?|mins?|hours?|hrs?)\b|\bevery\s+hour\b|\bhourly\b|\bevery\s+half\s+(?:an?\s+)?hours?\b|\bevery\s+(\d+)\s*m\b|\bevery\s+(\d+)\s*h\b',
+  );
+
+  /// "between 7am and 11pm" / "from 9am to 6pm" (also dash-joined:
+  /// "from 9am-6pm"). Bounds require an explicit meridiem; bare numbers
+  /// ("between 7 and 11") and open-ended windows ("from 9am" with no
+  /// end) are not windows.
+  /// Groups 1-3/4-6 = between start/end, 7-9/10-12 = from start/end.
+  static final RegExp _windowPattern = RegExp(
+    r'\b(?:between\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)\s*(?:and|-)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)|from\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)\s*(?:to|-)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.))\b',
+  );
+
+  /// Anchor + one item of a multi-time list: "at 1pm", "at 8:30".
+  static final RegExp _listAnchorPattern = RegExp(
+    r'\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?',
+  );
+
+  /// Continuation of a list after the first item: ", 4pm", " and 11pm".
+  /// A comma or "and" is required so unrelated numbers are not glommed.
+  static final RegExp _listNextPattern = RegExp(
+    r'^(?:\s*,\s*(?:and\s+)?|\s+and\s+)(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?',
   );
 
   static const List<String> _dayNames = [
@@ -426,10 +525,62 @@ class NlParser {
   // Recurrence.
   // ------------------------------------------------------------------
 
+  /// Day restriction for interval phrases and time lists ("on Mondays",
+  /// "on weekdays"): returns the weekday mask (0 = none found) and
+  /// consumes the day words plus a preceding "on"/"every" connector so
+  /// neither leaks into the title. Matches overlapping already-consumed
+  /// spans are skipped. With [requireConnector], bare day names without
+  /// a preceding "on"/"every" are left alone so topic words ("plan
+  /// monday meeting") are never eaten; the weekday/weekend words are
+  /// unambiguous enough to always count.
+  static int _detectDayMask(
+    String text,
+    List<_Span> spans, {
+    bool requireConnector = false,
+  }) {
+    int? consumeWithConnector(RegExpMatch match) {
+      final candidate = _Span(match.start, match.end);
+      if (spans.any((s) => s.overlaps(candidate))) return null;
+      var start = match.start;
+      final connector =
+          RegExp(r'(on|every)\s*$').firstMatch(text.substring(0, start));
+      if (connector != null) {
+        start = connector.start;
+      } else if (requireConnector) {
+        return null;
+      }
+      spans.add(_Span(start, match.end));
+      return start;
+    }
+
+    final weekday = _everyWeekdayPattern.firstMatch(text);
+    if (weekday != null && consumeWithConnector(weekday) != null) {
+      // Bits 1..5 = Monday..Friday.
+      return 62;
+    }
+    final weekend = _everyWeekendPattern.firstMatch(text);
+    if (weekend != null && consumeWithConnector(weekend) != null) {
+      // Bits 6..7 = Saturday..Sunday.
+      return 192;
+    }
+    var mask = 0;
+    for (var i = 0; i < _dayNames.length; i++) {
+      final dayPattern = RegExp('\\b${_dayNames[i]}s?\\b');
+      for (final match in dayPattern.allMatches(text)) {
+        if (consumeWithConnector(match) != null) {
+          mask |= 1 << (i + 1);
+          break;
+        }
+      }
+    }
+    return mask;
+  }
+
   static _RecurrenceHit _detectRecurrence(String text, List<_Span> spans) {
-    // Interval expressions ("every hour", "every N minutes"): first-class
-    // [Recurrence.interval] with the first tick as the fire time. The
-    // span is still consumed for the title.
+    // Interval expressions ("every hour", "every N minutes", "every half
+    // hour"): first-class [Recurrence.interval] with the first tick as
+    // the fire time. A day restriction composes ("every hour on
+    // Mondays"); the span is still consumed for the title.
     final intervalMatch = _intervalPattern.firstMatch(text);
     if (intervalMatch != null) {
       spans.add(_Span(intervalMatch.start, intervalMatch.end));
@@ -441,13 +592,23 @@ class NlParser {
         intervalMinutes = unit.startsWith('hour') || unit.startsWith('hr')
             ? amount * 60
             : amount;
+      } else if (intervalMatch.group(3) != null) {
+        // "every 45m" shorthand.
+        intervalMinutes = int.parse(intervalMatch.group(3)!);
+      } else if (intervalMatch.group(4) != null) {
+        // "every 2h" shorthand.
+        intervalMinutes = int.parse(intervalMatch.group(4)!) * 60;
+      } else if (intervalMatch.group(0)!.contains('half')) {
+        // "every half hour" / "every half an hour".
+        intervalMinutes = 30;
       } else {
         // "every hour" / "hourly".
         intervalMinutes = 60;
       }
+      final mask = _detectDayMask(text, spans);
       return _RecurrenceHit(
         Recurrence.interval,
-        0,
+        mask,
         0.95,
         intervalMinutes: intervalMinutes,
       );
@@ -579,15 +740,100 @@ class NlParser {
       );
     }
 
-    // 5. Explicit clock: "at X", "at Xam/pm", "at HH:MM".
-    final atTime = _matchSpan(text, spans, _atTimePattern);
-    if (atTime != null) {
-      final parsed = _parseClock(atTime);
-      if (parsed != null) {
-        return _TimeHit(
-          hour: parsed.hour,
-          minute: parsed.minute,
-          confidence: parsed.explicitMeridiem ? 1.0 : 0.8,
+    // 5a. Window bounds for intervals: "between 7am and 11pm" /
+    // "from 9am to 6pm". Bounds need an explicit meridiem and end >
+    // start; anything else (bare numbers, wrapping, open-ended) is
+    // left for the steps below and the title.
+    final windowMatch = _firstNonOverlapping(text, spans, _windowPattern);
+    if (windowMatch != null) {
+      final isBetween = windowMatch.group(1) != null;
+      final startClock = _clockFromParts(
+        isBetween ? windowMatch.group(1) : windowMatch.group(7),
+        isBetween ? windowMatch.group(2) : windowMatch.group(8),
+        isBetween ? windowMatch.group(3) : windowMatch.group(9),
+      );
+      final endClock = _clockFromParts(
+        isBetween ? windowMatch.group(4) : windowMatch.group(10),
+        isBetween ? windowMatch.group(5) : windowMatch.group(11),
+        isBetween ? windowMatch.group(6) : windowMatch.group(12),
+      );
+      if (startClock != null &&
+          endClock != null &&
+          startClock.explicitMeridiem &&
+          endClock.explicitMeridiem) {
+        final startMinutes = startClock.hour * 60 + startClock.minute;
+        final endMinutes = endClock.hour * 60 + endClock.minute;
+        if (endMinutes > startMinutes) {
+          spans.add(_Span(windowMatch.start, windowMatch.end));
+          return _TimeHit.window(
+            windowStart: startMinutes,
+            windowEnd: endMinutes,
+            confidence: 0.85,
+          );
+        }
+      }
+    }
+
+    // 5b. Time list: "at 1pm, 4pm, 8pm and 11pm". The anchor covers a
+    // lone "at X" too, so single times resolve here with the old
+    // confidence (explicit 1.0, bare 0.8). Continuations need a comma
+    // or "and" so unrelated numbers are not glommed. Bare items
+    // inherit the first explicit meridiem in the list ("1, 4 and 8pm"
+    // -> all pm); with none explicit the raw 24-hour values stand.
+    final anchor = _firstNonOverlapping(text, spans, _listAnchorPattern);
+    if (anchor != null) {
+      final first =
+          _clockFromParts(anchor.group(1), anchor.group(2), anchor.group(3));
+      if (first != null) {
+        _TimeHit single() {
+          spans.add(_Span(anchor.start, anchor.end));
+          return _TimeHit(
+            hour: first.hour,
+            minute: first.minute,
+            confidence: first.explicitMeridiem ? 1.0 : 0.8,
+          );
+        }
+
+        final raws = <_RawClock>[
+          _RawClock(anchor.group(1)!, anchor.group(2), anchor.group(3)),
+        ];
+        var cursor = anchor.end;
+        var listEnd = anchor.end;
+        while (cursor < text.length) {
+          final next =
+              _listNextPattern.firstMatch(text.substring(cursor));
+          if (next == null) break;
+          raws.add(_RawClock(next.group(1)!, next.group(2), next.group(3)));
+          cursor += next.end;
+          listEnd = cursor;
+        }
+        if (raws.length == 1) return single();
+
+        String? inherited;
+        for (final raw in raws) {
+          if (raw.meridiem != null) {
+            inherited = raw.meridiem;
+            break;
+          }
+        }
+        final resolved = <int>[];
+        var allExplicit = true;
+        for (final raw in raws) {
+          if (raw.meridiem == null) allExplicit = false;
+          final clock =
+              _clockFromParts(raw.hour, raw.minute, raw.meridiem ?? inherited);
+          if (clock == null) return single();
+          resolved.add(clock.hour * 60 + clock.minute);
+        }
+        spans.add(_Span(anchor.start, listEnd));
+        final mask =
+            _detectDayMask(text, spans, requireConnector: true);
+        return _TimeHit.list(
+          times: resolved,
+          hour: first.hour,
+          minute: first.minute,
+          confidence: allExplicit ? 0.9 : 0.8,
+          dayMaskOverride: mask,
         );
       }
     }
@@ -641,21 +887,49 @@ class NlParser {
     return null;
   }
 
-  static _ClockTime? _parseClock(RegExpMatch match) {
-    final hourRaw = int.parse(match.group(1)!);
-    final minuteRaw =
-        match.group(2) != null ? int.parse(match.group(2)!) : 0;
-    final meridiem = match.group(3);
-    if (minuteRaw > 59) return null;
-    if (meridiem != null) {
-      if (hourRaw < 1 || hourRaw > 12) return null;
-      final isPm = meridiem.startsWith('p');
-      var hour = hourRaw % 12;
-      if (isPm) hour += 12;
-      return _ClockTime(hour, minuteRaw, true);
+  /// First match of [pattern] that does not overlap [spans], without
+  /// consuming it. Callers add the span themselves once validated.
+  static RegExpMatch? _firstNonOverlapping(
+    String text,
+    List<_Span> spans,
+    RegExp pattern,
+  ) {
+    for (final match in pattern.allMatches(text)) {
+      final candidate = _Span(match.start, match.end);
+      if (!spans.any((s) => s.overlaps(candidate))) return match;
     }
-    if (hourRaw > 23) return null;
-    return _ClockTime(hourRaw, minuteRaw, false);
+    return null;
+  }
+
+  /// Builds a clock from raw digit/meridiem parts. Returns null when
+  /// out of range (minutes > 59, 12-hour clock outside 1-12, 24-hour
+  /// clock above 23).
+  static _ClockTime? _clockFromParts(
+    String? hourRaw,
+    String? minuteRaw,
+    String? meridiem,
+  ) {
+    if (hourRaw == null) return null;
+    final hourValue = int.parse(hourRaw);
+    final minuteValue = minuteRaw != null ? int.parse(minuteRaw) : 0;
+    if (minuteValue > 59) return null;
+    if (meridiem != null) {
+      if (hourValue < 1 || hourValue > 12) return null;
+      final isPm = meridiem.startsWith('p');
+      var hour = hourValue % 12;
+      if (isPm) hour += 12;
+      return _ClockTime(hour, minuteValue, true);
+    }
+    if (hourValue > 23) return null;
+    return _ClockTime(hourValue, minuteValue, false);
+  }
+
+  static _ClockTime? _parseClock(RegExpMatch match) {
+    return _clockFromParts(
+      match.group(1),
+      match.group(2),
+      match.group(3),
+    );
   }
 
   /// Table rule: medication keeps 20:00 for "night"; every other
@@ -774,14 +1048,44 @@ class _TimeHit {
     required this.minute,
     required this.confidence,
     this.isTomorrow = false,
-  }) : relativeMinutes = null;
+  })  : relativeMinutes = null,
+        times = null,
+        windowStart = null,
+        windowEnd = null,
+        dayMaskOverride = 0;
 
   const _TimeHit.relative(int minutes)
       : hour = -1,
         minute = 0,
         confidence = 0.7,
         isTomorrow = false,
-        relativeMinutes = minutes;
+        relativeMinutes = minutes,
+        times = null,
+        windowStart = null,
+        windowEnd = null,
+        dayMaskOverride = 0;
+
+  const _TimeHit.window({
+    required int this.windowStart,
+    required int this.windowEnd,
+    required this.confidence,
+  })  : hour = windowStart ~/ 60,
+        minute = windowStart % 60,
+        isTomorrow = false,
+        relativeMinutes = null,
+        times = null,
+        dayMaskOverride = 0;
+
+  const _TimeHit.list({
+    required this.times,
+    required this.hour,
+    required this.minute,
+    required this.confidence,
+    this.dayMaskOverride = 0,
+  })  : isTomorrow = false,
+        relativeMinutes = null,
+        windowStart = null,
+        windowEnd = null;
 
   final int hour;
   final int minute;
@@ -790,6 +1094,29 @@ class _TimeHit {
 
   /// When set, [hour]/[minute] are derived from now + this offset.
   final int? relativeMinutes;
+
+  /// Multi-time list as minutes since midnight (null unless a list).
+  /// [hour]/[minute] carry the first entry for single-item fallback.
+  final List<int>? times;
+
+  /// Window bounds as minutes since midnight (null unless a window).
+  final int? windowStart;
+
+  /// Window end, see [windowStart].
+  final int? windowEnd;
+
+  /// Day restriction found next to a time list ("on Mondays"), 0 when
+  /// none. The schedule step promotes once -> weekly/custom from this.
+  final int dayMaskOverride;
+}
+
+/// One raw clock item inside a time list: digit parts plus the
+/// meridiem suffix when present (null = bare).
+class _RawClock {
+  const _RawClock(this.hour, this.minute, this.meridiem);
+  final String hour;
+  final String? minute;
+  final String? meridiem;
 }
 
 class _ClockTime {

@@ -70,6 +70,9 @@ class ReminderProvider extends ChangeNotifier {
   /// provided by the NL parser, becomes [Reminder.nextFireAt] directly:
   /// the parser distinguishes "at 3pm" from "tomorrow at 3pm" (both
   /// hour=15, minute=0) and only scheduledAt carries that difference.
+  /// [timesOfDayMinutes]/[windowStartMinutes]/[windowEndMinutes], when
+  /// provided by the NL capture UI, are stored as-is; otherwise the
+  /// reminder is single-time at [hour]:[minute].
   Future<Reminder> addReminder({
     required String title,
     required int hour,
@@ -81,21 +84,25 @@ class ReminderProvider extends ChangeNotifier {
     Urgency? urgency,
     DateTime? scheduledAt,
     int? intervalMinutes,
+    List<int>? timesOfDayMinutes,
+    int? windowStartMinutes,
+    int? windowEndMinutes,
   }) async {
     await _ensureInit();
     final now = DateTime.now();
+    final times = timesOfDayMinutes ?? [hour * 60 + minute];
     final next = scheduledAt ??
         nextOccurrence(
             now: now,
-            hour: hour,
-            minute: minute,
+            timesOfDayMinutes: times,
             recurrence: recurrence,
             daysMask: daysMask,
-            intervalMinutes: intervalMinutes);
+            intervalMinutes: intervalMinutes,
+            windowStartMinutes: windowStartMinutes,
+            windowEndMinutes: windowEndMinutes);
     final r = Reminder(
       title: title,
-      hour: hour,
-      minute: minute,
+      timesOfDayMinutes: times,
       recurrence: recurrence,
       daysMask: daysMask,
       category: category,
@@ -106,6 +113,8 @@ class ReminderProvider extends ChangeNotifier {
       importance: importance ?? Importance.medium,
       urgency: urgency ?? Urgency.low,
       intervalMinutes: intervalMinutes,
+      windowStartMinutes: windowStartMinutes,
+      windowEndMinutes: windowEndMinutes,
     );
     final saved = await _repo!.insert(r);
     _reminders.add(saved);

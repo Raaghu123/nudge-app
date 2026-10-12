@@ -247,4 +247,96 @@ void main() {
       expect(parsed.urgency, equals(Urgency.low));
     });
   });
+
+  group('rich time patterns', () {
+    test('multi-time list parses to daily with all four times', () {
+      final parsed = NlParser.parse(
+        'drink water at 1pm,4pm,8pm,11pm everyday',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('drink water'));
+      expect(parsed.recurrence, equals(Recurrence.daily));
+      expect(parsed.timesOfDayMinutes, equals([780, 960, 1200, 1380]));
+      expect(parsed.timeConfidence, equals(0.9));
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 13, 0)));
+    });
+
+    test('half-hour interval with a between window', () {
+      final parsed = NlParser.parse(
+        'drink water every half hour between 7am and 11pm',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('drink water'));
+      expect(parsed.recurrence, equals(Recurrence.interval));
+      expect(parsed.intervalMinutes, equals(30));
+      expect(parsed.windowStartMinutes, equals(420));
+      expect(parsed.windowEndMinutes, equals(1380));
+      expect(parsed.timeConfidence, equals(0.85));
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 10, 30)));
+    });
+
+    test('interval with a from window and weekday restriction', () {
+      final parsed = NlParser.parse(
+        'remind me to stretch every 2 hours from 9am-6pm weekdays',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('stretch'));
+      expect(parsed.recurrence, equals(Recurrence.interval));
+      expect(parsed.intervalMinutes, equals(120));
+      expect(parsed.windowStartMinutes, equals(540));
+      expect(parsed.windowEndMinutes, equals(1080));
+      expect(parsed.daysMask, equals(62));
+      // Ticks are 9:00, 11:00, ... from window start; at 10:00 the next
+      // tick is 11:00.
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 11, 0)));
+    });
+
+    test('two times parse to daily at both', () {
+      final parsed = NlParser.parse(
+        'take medication at 8am and 8pm',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('take medication'));
+      expect(parsed.recurrence, equals(Recurrence.daily));
+      expect(parsed.timesOfDayMinutes, equals([480, 1200]));
+      expect(parsed.category, equals(Category.medication));
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 20, 0)));
+    });
+
+    test('hourly interval composes with a named day', () {
+      final parsed = NlParser.parse(
+        'water plants every hour Mondays',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('water plants'));
+      expect(parsed.recurrence, equals(Recurrence.interval));
+      expect(parsed.intervalMinutes, equals(60));
+      expect(parsed.daysMask, equals(2));
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 11, 0)));
+    });
+
+    test('topic after the time phrase keeps the trailing words', () {
+      final parsed = NlParser.parse(
+        'remind me at 8am and 8pm every day to take my medicine',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('take my medicine'));
+      expect(parsed.recurrence, equals(Recurrence.daily));
+      expect(parsed.timesOfDayMinutes, equals([480, 1200]));
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 20, 0)));
+    });
+
+    test('minute shorthand with a dash window', () {
+      final parsed = NlParser.parse(
+        'drink water every 45m between 10am-5pm',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('drink water'));
+      expect(parsed.recurrence, equals(Recurrence.interval));
+      expect(parsed.intervalMinutes, equals(45));
+      expect(parsed.windowStartMinutes, equals(600));
+      expect(parsed.windowEndMinutes, equals(1020));
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 10, 45)));
+    });
+  });
 }

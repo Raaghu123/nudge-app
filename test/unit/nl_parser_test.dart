@@ -182,14 +182,26 @@ void main() {
       expect(parsed.hour, equals(9));
     });
 
-    test('"every hour" degrades to once at the next tick', () {
+    test('"every hour" is interval 60 with the first tick', () {
       final parsed = NlParser.parse(
         'remind me to drink water every hour',
         now: _tue1000,
       );
-      expect(parsed.recurrence, equals(Recurrence.once));
-      expect(parsed.recurrenceConfidence, equals(0.5));
+      expect(parsed.recurrence, equals(Recurrence.interval));
+      expect(parsed.intervalMinutes, equals(60));
+      expect(parsed.recurrenceConfidence, equals(0.95));
       expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 11, 0)));
+    });
+
+    test('"every 30 minutes" is interval 30 with the first tick', () {
+      final parsed = NlParser.parse(
+        'remind me to drink water every 30 minutes',
+        now: _tue1000,
+      );
+      expect(parsed.recurrence, equals(Recurrence.interval));
+      expect(parsed.intervalMinutes, equals(30));
+      expect(parsed.recurrenceConfidence, equals(0.95));
+      expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 10, 30)));
     });
 
     test('"every night" keeps the medication 20:00 rule', () {

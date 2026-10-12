@@ -8,6 +8,8 @@ enum Recurrence {
   weekly,
   /// Fires on a custom set of weekdays defined by [Reminder.daysMask].
   custom,
+  /// Repeats every [Reminder.intervalMinutes] minutes from the last fire.
+  interval,
 }
 
 /// Categorizes the reminder for grouping and filtering.
@@ -82,6 +84,7 @@ class Reminder {
     required this.updatedAt,
     this.importance = Importance.medium,
     this.urgency = Urgency.low,
+    this.intervalMinutes,
   });
 
   /// Database primary key; null for new reminders not yet inserted.
@@ -124,6 +127,9 @@ class Reminder {
   /// How time-sensitive this reminder is. Defaults to low.
   final Urgency urgency;
 
+  /// Repeat interval in minutes for [Recurrence.interval]; null otherwise.
+  final int? intervalMinutes;
+
   /// Serializes this reminder to a JSON-compatible map.
   Map<String, dynamic> toJson() {
     return {
@@ -140,6 +146,7 @@ class Reminder {
       'updated_at': updatedAt.toIso8601String(),
       'importance': importance.name,
       'urgency': urgency.name,
+      'interval_minutes': intervalMinutes,
     };
   }
 
@@ -176,6 +183,7 @@ class Reminder {
       importance:
           _namedOr(Importance.values, json['importance'], Importance.medium),
       urgency: _namedOr(Urgency.values, json['urgency'], Urgency.low),
+      intervalMinutes: json['interval_minutes'] as int?,
     );
   }
 
@@ -196,6 +204,7 @@ class Reminder {
     DateTime? updatedAt,
     Importance? importance,
     Urgency? urgency,
+    int? intervalMinutes,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -211,6 +220,7 @@ class Reminder {
       updatedAt: updatedAt ?? DateTime.now(),
       importance: importance ?? this.importance,
       urgency: urgency ?? this.urgency,
+      intervalMinutes: intervalMinutes ?? this.intervalMinutes,
     );
   }
 }

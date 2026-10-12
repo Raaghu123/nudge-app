@@ -142,4 +142,73 @@ void main() {
       );
     });
   });
+
+  group('addReminder intervalMinutes', () {
+    test('interval reminder keeps recurrence + minutes, first tick +30m', () async {
+      final provider = newProvider();
+      final before = DateTime.now();
+      final saved = await provider.addReminder(
+        title: 'Drink water',
+        hour: 10,
+        minute: 30,
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        category: Category.water,
+        intervalMinutes: 30,
+      );
+
+      expect(saved.recurrence, equals(Recurrence.interval));
+      expect(saved.intervalMinutes, equals(30));
+      // No scheduledAt: next fire is computed as now + 30 minutes.
+      expect(saved.nextFireAt!.isAfter(before.add(const Duration(minutes: 29))), isTrue);
+      expect(saved.nextFireAt!.isBefore(before.add(const Duration(minutes: 31))), isTrue);
+    });
+
+    test('intervalMinutes round-trips through the v3 column', () async {
+      final provider = newProvider();
+      await provider.addReminder(
+        title: 'Drink water',
+        hour: 10,
+        minute: 30,
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        category: Category.water,
+        intervalMinutes: 30,
+      );
+
+      // A fresh provider re-reads from disk, proving the value survives
+      // SQLite (not just the in-memory copy).
+      final reloaded = newProvider();
+      await reloaded.addReminder(
+        title: 'Buy milk',
+        hour: 18,
+        minute: 0,
+        recurrence: Recurrence.once,
+        daysMask: 0,
+        category: Category.errand,
+      );
+      final water =
+          reloaded.upcoming.firstWhere((r) => r.title == 'Drink water');
+      expect(water.recurrence, equals(Recurrence.interval));
+      expect(water.intervalMinutes, equals(30));
+    });
+
+    test('intervalMinutes round-trips through toJson/fromJson', () {
+      final reminder = Reminder(
+        title: 'Drink water',
+        hour: 10,
+        minute: 30,
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        category: Category.water,
+        status: ReminderStatus.pending,
+        createdAt: DateTime(2026, 10, 6, 10, 0),
+        updatedAt: DateTime(2026, 10, 6, 10, 0),
+        intervalMinutes: 30,
+      );
+      final restored = Reminder.fromJson(reminder.toJson());
+      expect(restored.recurrence, equals(Recurrence.interval));
+      expect(restored.intervalMinutes, equals(30));
+    });
+  });
 }

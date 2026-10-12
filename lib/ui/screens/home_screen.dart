@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:nudge/core/models/reminder.dart';
 import 'package:nudge/core/providers/reminder_provider.dart';
 import 'package:nudge/ui/screens/create_reminder_screen.dart';
+import 'package:nudge/ui/screens/nl_capture_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -14,18 +15,41 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Nudge')),
-      body: upcoming.isEmpty
-          ? const Center(
-              child: Text('No upcoming reminders.', style: TextStyle(color: Colors.grey)),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(8.0),
-              itemCount: upcoming.length,
-              itemBuilder: (context, index) {
-                final reminder = upcoming[index];
-                return _ReminderTile(reminder: reminder);
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const Key('nl_entry'),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const NlCaptureScreen()),
+                );
               },
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Type naturally'),
             ),
+          ),
+          Expanded(
+            child: upcoming.isEmpty
+                ? const Center(
+                    child: Text('No upcoming reminders.',
+                        style: TextStyle(color: Colors.grey)),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(8.0),
+                    itemCount: upcoming.length,
+                    itemBuilder: (context, index) {
+                      final reminder = upcoming[index];
+                      return _ReminderTile(reminder: reminder);
+                    },
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(

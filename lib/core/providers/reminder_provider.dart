@@ -80,11 +80,18 @@ class ReminderProvider extends ChangeNotifier {
     Importance? importance,
     Urgency? urgency,
     DateTime? scheduledAt,
+    int? intervalMinutes,
   }) async {
     await _ensureInit();
     final now = DateTime.now();
     final next = scheduledAt ??
-        nextOccurrence(now: now, hour: hour, minute: minute, recurrence: recurrence, daysMask: daysMask);
+        nextOccurrence(
+            now: now,
+            hour: hour,
+            minute: minute,
+            recurrence: recurrence,
+            daysMask: daysMask,
+            intervalMinutes: intervalMinutes);
     final r = Reminder(
       title: title,
       hour: hour,
@@ -98,6 +105,7 @@ class ReminderProvider extends ChangeNotifier {
       updatedAt: now,
       importance: importance ?? Importance.medium,
       urgency: urgency ?? Urgency.low,
+      intervalMinutes: intervalMinutes,
     );
     final saved = await _repo!.insert(r);
     _reminders.add(saved);

@@ -142,6 +142,47 @@ void main() {
     });
   });
 
+  group('nextOccurrence interval', () {
+    test('interval 60 from a known lastFire returns exactly +60 min', () {
+      final lastFire = DateTime(2026, 10, 6, 10, 0);
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 10, 30),
+        hour: 10,
+        minute: 0,
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        intervalMinutes: 60,
+        lastFire: lastFire,
+      );
+      expect(result, equals(DateTime(2026, 10, 6, 11, 0)));
+    });
+
+    test('null intervalMinutes returns null (once-like defensive)', () {
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 10, 30),
+        hour: 10,
+        minute: 0,
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        lastFire: DateTime(2026, 10, 6, 10, 0),
+      );
+      expect(result, isNull);
+    });
+
+    test('zero intervalMinutes returns null (no tight loop)', () {
+      final result = nextOccurrence(
+        now: DateTime(2026, 10, 6, 10, 30),
+        hour: 10,
+        minute: 0,
+        recurrence: Recurrence.interval,
+        daysMask: 0,
+        intervalMinutes: 0,
+        lastFire: DateTime(2026, 10, 6, 10, 0),
+      );
+      expect(result, isNull);
+    });
+  });
+
   group('snoozeDurationFor', () {
     test('medication snoozes 15 minutes', () {
       expect(

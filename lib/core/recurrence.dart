@@ -58,6 +58,8 @@ DateTime? nextOccurrence({
   required int minute,
   required Recurrence recurrence,
   required int daysMask,
+  int? intervalMinutes,
+  DateTime? lastFire,
 }) {
   final target = DateTime(now.year, now.month, now.day, hour, minute);
 
@@ -83,5 +85,11 @@ DateTime? nextOccurrence({
         }
       }
       return null;
+
+    case Recurrence.interval:
+      // Defensive: corrupt or missing interval degrades to once with no
+      // computable next fire rather than a zero-duration tight loop.
+      if (intervalMinutes == null || intervalMinutes <= 0) return null;
+      return (lastFire ?? now).add(Duration(minutes: intervalMinutes));
   }
 }

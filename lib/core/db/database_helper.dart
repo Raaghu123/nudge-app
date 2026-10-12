@@ -16,8 +16,9 @@ class DatabaseSchema {
   static const String updatedAt = 'updated_at';
   static const String importance = 'importance';
   static const String urgency = 'urgency';
+  static const String intervalMinutes = 'interval_minutes';
 
-  static const String createTableSql = '''CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, hour INTEGER, minute INTEGER, recurrence TEXT, days_mask INTEGER, category TEXT, status TEXT, next_fire_at TEXT, created_at TEXT, updated_at TEXT, importance TEXT, urgency TEXT)''';
+  static const String createTableSql = '''CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, hour INTEGER, minute INTEGER, recurrence TEXT, days_mask INTEGER, category TEXT, status TEXT, next_fire_at TEXT, created_at TEXT, updated_at TEXT, importance TEXT, urgency TEXT, interval_minutes INTEGER)''';
 }
 
 Future<sql.Database> openAppDatabase() async {
@@ -25,7 +26,7 @@ Future<sql.Database> openAppDatabase() async {
   final path = p.join(dir, 'nudge.db');
   return sql.openDatabase(
     path,
-    version: 2,
+    version: 3,
     onCreate: (db, version) async {
       await db.execute(DatabaseSchema.createTableSql);
     },
@@ -37,6 +38,12 @@ Future<sql.Database> openAppDatabase() async {
             'ALTER TABLE ${DatabaseSchema.table} ADD COLUMN ${DatabaseSchema.importance} TEXT');
         await db.execute(
             'ALTER TABLE ${DatabaseSchema.table} ADD COLUMN ${DatabaseSchema.urgency} TEXT');
+      }
+      // v3: Phase 2.2 added intervalMinutes for Recurrence.interval.
+      // Existing rows keep NULL and Reminder.fromJson reads it as null.
+      if (oldVersion < 3) {
+        await db.execute(
+            'ALTER TABLE ${DatabaseSchema.table} ADD COLUMN ${DatabaseSchema.intervalMinutes} INTEGER');
       }
     },
   );

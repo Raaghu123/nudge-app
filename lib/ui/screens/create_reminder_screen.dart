@@ -126,7 +126,9 @@ class _CreateReminderScreenState extends State<CreateReminderScreen> {
                     labelText: 'Recurrence',
                     border: OutlineInputBorder(),
                   ),
-                  items: Recurrence.values.map((Recurrence value) {
+                  items: Recurrence.values
+                      .where((v) => v != Recurrence.interval)
+                      .map((Recurrence value) {
                     return DropdownMenuItem<Recurrence>(
                       value: value,
                       child: Text(_recurrenceLabel(value)),
@@ -249,6 +251,10 @@ class _CreateReminderScreenState extends State<CreateReminderScreen> {
         return 'Weekly';
       case Recurrence.custom:
         return 'Custom';
+      case Recurrence.interval:
+        // Defensive only: interval is filtered from the dropdown above
+        // (the form has no interval input), so this is unreachable.
+        return 'Interval';
     }
   }
 

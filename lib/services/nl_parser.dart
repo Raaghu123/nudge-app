@@ -21,6 +21,7 @@ class ParsedReminder {
     required this.importance,
     required this.urgency,
     required this.scheduledAt,
+    this.intervalMinutes,
   });
 
   /// Reminder title with command prefixes and time/recurrence expressions
@@ -48,10 +49,9 @@ class ParsedReminder {
   /// Weekday bitmask for weekly/custom (bit i = DateTime.weekday i).
   final int daysMask;
 
-  /// 1.0 explicit ("every day", "every morning", ...), 0.9 weekday or
-  /// named day(s), 0.8 default assumption (no recurrence words found),
-  /// 0.5 interval expression ("every hour", "every N minutes") which the
-  /// v1 [Recurrence] enum cannot represent and is stored as [Recurrence.once].
+  /// 1.0 explicit ("every day", "every morning", ...), 0.95 interval
+  /// expression ("every hour", "every N minutes"), 0.9 weekday or
+  /// named day(s), 0.8 default assumption (no recurrence words found).
   final double recurrenceConfidence;
 
   /// Detected category.
@@ -70,6 +70,11 @@ class ParsedReminder {
   /// First fire time. Never null: one-off times that already passed today
   /// roll forward to tomorrow.
   final DateTime scheduledAt;
+
+  /// Repeat interval in minutes for [Recurrence.interval] ("every hour"
+  /// -> 60); null for every other recurrence. The first tick is already
+  /// in [scheduledAt] (now + this offset).
+  final int? intervalMinutes;
 }
 
 /// Deterministic rule-based parser for natural-language reminders.
@@ -89,10 +94,10 @@ class ParsedReminder {
 /// - Category keywords per table below.
 /// - Category default times and importance/urgency defaults per table.
 ///
-/// Known limitations (single-fire v1 model):
-/// - Sub-daily intervals ("every hour") are stored as [Recurrence.once]
-///   with [ParsedReminder.scheduledAt] set to the next interval tick.
-///   Full interval support needs a model change.
+/// Known limitations:
+/// - Sub-daily intervals ("every hour", "every N minutes") parse to
+///   [Recurrence.interval] with [ParsedReminder.intervalMinutes] set and
+///   [ParsedReminder.scheduledAt] holding the first tick.
 /// - Twice-daily phrasing ("every morning and night") keeps the first
 ///   time-of-day hint only.
 class NlParser {
@@ -205,6 +210,7 @@ class NlParser {
       importance: _importanceFor(categoryHit.category),
       urgency: _urgencyFor(categoryHit.category),
       scheduledAt: scheduledAt,
+      intervalMinutes: recurrenceHit.intervalMinutes,
     );
   }
 
@@ -421,8 +427,8 @@ class NlParser {
   // ------------------------------------------------------------------
 
   static _RecurrenceHit _detectRecurrence(String text, List<_Span> spans) {
-    // Interval expressions ("every hour", "every N minutes"): stored as
-    // once (see class docs) with the first tick as the fire time. The
+    // Interval expressions ("every hour", "every N minutes"): first-class
+    // [Recurrence.interval] with the first tick as the fire time. The
     // span is still consumed for the title.
     final intervalMatch = _intervalPattern.firstMatch(text);
     if (intervalMatch != null) {
@@ -440,9 +446,9 @@ class NlParser {
         intervalMinutes = 60;
       }
       return _RecurrenceHit(
-        Recurrence.once,
+        Recurrence.interval,
         0,
-        0.5,
+        0.95,
         intervalMinutes: intervalMinutes,
       );
     }

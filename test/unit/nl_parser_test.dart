@@ -326,6 +326,37 @@ void main() {
       expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 20, 0)));
     });
 
+    test('24-hour list parses both times', () {
+      final parsed = NlParser.parse(
+        'remind me to drink tea at 21:40 and 21:41',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('drink tea'));
+      expect(parsed.timesOfDayMinutes, equals([1300, 1301]));
+      expect(parsed.category, equals(Category.water));
+    });
+
+    test('24-hour singular time parses', () {
+      final parsed = NlParser.parse(
+        'remind me to drink tea at 21:40',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('drink tea'));
+      expect(parsed.timesOfDayMinutes, equals([1300]));
+      expect(parsed.category, equals(Category.water));
+    });
+
+    test('mixed 12-hour and 24-hour list keeps the 24-hour value as-is',
+        () {
+      final parsed = NlParser.parse(
+        'remind me to drink tea at 9:30am and 21:40',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('drink tea'));
+      expect(parsed.timesOfDayMinutes, equals([570, 1300]));
+      expect(parsed.category, equals(Category.water));
+    });
+
     test('minute shorthand with a dash window', () {
       final parsed = NlParser.parse(
         'drink water every 45m between 10am-5pm',

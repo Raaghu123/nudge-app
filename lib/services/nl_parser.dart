@@ -350,14 +350,18 @@ class NlParser {
   );
 
   /// Anchor + one item of a multi-time list: "at 1pm", "at 8:30".
+  /// The space before a meridiem is consumed only with the meridiem, so
+  /// a bare time never swallows the separator space the list
+  /// continuation pattern needs ("at 21:40 and 21:41").
   static final RegExp _listAnchorPattern = RegExp(
-    r'\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?',
+    r'\bat\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm|a\.m\.|p\.m\.))?',
   );
 
   /// Continuation of a list after the first item: ", 4pm", " and 11pm".
   /// A comma or "and" is required so unrelated numbers are not glommed.
+  /// Same trailing-space rule as the anchor.
   static final RegExp _listNextPattern = RegExp(
-    r'^(?:\s*,\s*(?:and\s+)?|\s+and\s+)(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?',
+    r'^(?:\s*,\s*(?:and\s+)?|\s+and\s+)(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm|a\.m\.|p\.m\.))?',
   );
 
   static const List<String> _dayNames = [
@@ -402,8 +406,17 @@ class NlParser {
       ],
     ),
     Category.water: const _KeywordSet(
-      strong: [r'water\b'],
-      general: [r'hydrat\w*\b'],
+      strong: [
+        r'water\b',
+        r'tea\b',
+        r'coffee\b',
+        r'juice\b',
+        r'soda\b',
+      ],
+      general: [
+        r'hydrat\w*\b',
+        r'drink\w*\b',
+      ],
     ),
     Category.exercise: const _KeywordSet(
       strong: [
@@ -819,9 +832,19 @@ class NlParser {
         final resolved = <int>[];
         var allExplicit = true;
         for (final raw in raws) {
+          _ClockTime? clock;
+          if (raw.meridiem != null) {
+            clock = _clockFromParts(raw.hour, raw.minute, raw.meridiem);
+          } else {
+            // Bare items inherit the list meridiem when it fits a
+            // 12-hour clock; an unambiguous 24-hour value ("21:40"
+            // next to "9:30am") stands on its own instead.
+            if (inherited != null) {
+              clock = _clockFromParts(raw.hour, raw.minute, inherited);
+            }
+            clock ??= _clockFromParts(raw.hour, raw.minute, null);
+          }
           if (raw.meridiem == null) allExplicit = false;
-          final clock =
-              _clockFromParts(raw.hour, raw.minute, raw.meridiem ?? inherited);
           if (clock == null) return single();
           resolved.add(clock.hour * 60 + clock.minute);
         }

@@ -20,8 +20,10 @@ class DatabaseSchema {
   static const String timesOfDayMinutes = 'times_of_day_minutes';
   static const String windowStartMinutes = 'window_start_minutes';
   static const String windowEndMinutes = 'window_end_minutes';
+  static const String sequentialSteps = 'sequential_steps';
+  static const String currentStepIndex = 'current_step_index';
 
-  static const String createTableSql = '''CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, hour INTEGER, minute INTEGER, times_of_day_minutes TEXT, recurrence TEXT, days_mask INTEGER, category TEXT, status TEXT, next_fire_at TEXT, created_at TEXT, updated_at TEXT, importance TEXT, urgency TEXT, interval_minutes INTEGER, window_start_minutes INTEGER, window_end_minutes INTEGER)''';
+  static const String createTableSql = '''CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, hour INTEGER, minute INTEGER, times_of_day_minutes TEXT, recurrence TEXT, days_mask INTEGER, category TEXT, status TEXT, next_fire_at TEXT, created_at TEXT, updated_at TEXT, importance TEXT, urgency TEXT, interval_minutes INTEGER, window_start_minutes INTEGER, window_end_minutes INTEGER, sequential_steps TEXT, current_step_index INTEGER DEFAULT 0)''';
 }
 
 Future<sql.Database> openAppDatabase() async {
@@ -29,7 +31,7 @@ Future<sql.Database> openAppDatabase() async {
   final path = p.join(dir, 'nudge.db');
   return sql.openDatabase(
     path,
-    version: 4,
+    version: 5,
     onCreate: (db, version) async {
       await db.execute(DatabaseSchema.createTableSql);
     },
@@ -61,6 +63,18 @@ Future<sql.Database> openAppDatabase() async {
         await db.execute(
             'UPDATE ${DatabaseSchema.table} SET ${DatabaseSchema.timesOfDayMinutes} = '
             '\'[ \' || (${DatabaseSchema.hour} * 60 + ${DatabaseSchema.minute}) || \' ]\'');
+      }
+      // v5: sequential steps. New columns for the ordered step list (JSON
+      // array) and the current step index; existing rows are backfilled
+      // so fromJson keeps working.
+      if (oldVersion < 5) {
+        await db.execute(
+            'ALTER TABLE ${DatabaseSchema.table} ADD COLUMN ${DatabaseSchema.sequentialSteps} TEXT');
+        await db.execute(
+            'ALTER TABLE ${DatabaseSchema.table} ADD COLUMN ${DatabaseSchema.currentStepIndex} INTEGER DEFAULT 0');
+        await db.execute(
+            'UPDATE ${DatabaseSchema.table} SET ${DatabaseSchema.sequentialSteps} = \'[]\', '
+            '${DatabaseSchema.currentStepIndex} = 0');
       }
     },
   );

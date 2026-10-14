@@ -56,6 +56,7 @@ class _NlConfirmScreenState extends State<NlConfirmScreen> {
           timesOfDayMinutes: parsed.timesOfDayMinutes,
           windowStartMinutes: parsed.windowStartMinutes,
           windowEndMinutes: parsed.windowEndMinutes,
+          sequentialSteps: parsed.sequentialSteps,
         );
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -94,6 +95,18 @@ class _NlConfirmScreenState extends State<NlConfirmScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    if (parsed.sequentialSteps.isNotEmpty) ...[
+                      _FieldRow(
+                        label: 'Steps',
+                        lowConfidence: false,
+                        child: Text(
+                          _stepsLabel(parsed),
+                          key: const Key('nl_steps'),
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     _FieldRow(
                       label: 'Category',
                       lowConfidence:
@@ -300,7 +313,21 @@ bool _isSameDay(DateTime a, DateTime b) {
   return a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
+/// Numbered step list ("1. topic 1\n2. topic 2\n...") for the read-only
+/// Steps row, shown only when the parse produced sequential steps.
+String _stepsLabel(ParsedReminder parsed) {
+  final lines = <String>[];
+  for (var i = 0; i < parsed.sequentialSteps.length; i++) {
+    lines.add('${i + 1}. ${parsed.sequentialSteps[i]}');
+  }
+  return lines.join('\n');
+}
+
 /// Human-readable schedule line computed from the parsed fields.
+///
+/// Sequential reminders with a window render the cycle bounds
+/// ("Every day from 6:00 PM to 10:00 PM"); sequential reminders without
+/// a window fall through to the regular labels below.
 ///
 /// Plain [Recurrence.interval] renders short from
 /// [ParsedReminder.intervalMinutes] ("Every 1h", "Every 30m"); windowed
@@ -309,6 +336,14 @@ bool _isSameDay(DateTime a, DateTime b) {
 /// every clock ("Every day at 1:00 PM, 4:00 PM"). The first fire is
 /// already in scheduledAt and shown on the home screen after save.
 String _whenLabel(ParsedReminder parsed) {
+  if (parsed.sequentialSteps.isNotEmpty &&
+      parsed.windowStartMinutes != null &&
+      parsed.windowEndMinutes != null) {
+    final start = parsed.windowStartMinutes!;
+    final end = parsed.windowEndMinutes!;
+    return 'Every day from ${_clockLabel(start ~/ 60, start % 60)}'
+        ' to ${_clockLabel(end ~/ 60, end % 60)}';
+  }
   final clock = _clockLabel(parsed.hour, parsed.minute);
 
   String daySuffix() {

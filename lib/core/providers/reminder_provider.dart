@@ -72,7 +72,9 @@ class ReminderProvider extends ChangeNotifier {
   /// hour=15, minute=0) and only scheduledAt carries that difference.
   /// [timesOfDayMinutes]/[windowStartMinutes]/[windowEndMinutes], when
   /// provided by the NL capture UI, are stored as-is; otherwise the
-  /// reminder is single-time at [hour]:[minute].
+  /// reminder is single-time at [hour]:[minute]. [sequentialSteps], when
+  /// provided by the NL confirm screen, makes completion advance one
+  /// step at a time; the form path omits it and stays single-shot.
   Future<Reminder> addReminder({
     required String title,
     required int hour,
@@ -87,6 +89,7 @@ class ReminderProvider extends ChangeNotifier {
     List<int>? timesOfDayMinutes,
     int? windowStartMinutes,
     int? windowEndMinutes,
+    List<String>? sequentialSteps,
   }) async {
     await _ensureInit();
     final now = DateTime.now();
@@ -115,6 +118,7 @@ class ReminderProvider extends ChangeNotifier {
       intervalMinutes: intervalMinutes,
       windowStartMinutes: windowStartMinutes,
       windowEndMinutes: windowEndMinutes,
+      sequentialSteps: sequentialSteps ?? const [],
     );
     final saved = await _repo!.insert(r);
     _reminders.add(saved);
@@ -134,10 +138,29 @@ class ReminderProvider extends ChangeNotifier {
 
   Future<void> complete(int id) async {
     await _ensureInit();
-    final r = _reminders.firstWhere((e) => e.id == id);
-    final updated = r.copyWith(status: ReminderStatus.completed);
-    await _repo!.update(updated);
-    await NotificationService.cancel(id);
+    final updated = await _repo!.completeStep(id);
+    if (updated.status == ReminderStatus.completed) {
+      await NotificationService.cancel(id);
+    } else {
+      // Dismiss the fired notification first: rescheduling under the same
+      // id does not reliably clear what is already on screen.
+      await NotificationService.cancel(id);
+      await NotificationService.scheduleNext(updated);
+      // Best-effort state refresh when the next step comes due. If the
+      // OS kills us before it fires, the scheduled alarm above still
+      // delivers the step on time — never use AlarmManager for this.
+      Future.delayed(const Duration(seconds: 30), () async {
+        try {
+          await _ensureInit();
+          final fresh = await _repo!.getAll();
+          final i = fresh.indexWhere((e) => e.id == id);
+          if (i >= 0) _replace(fresh[i]);
+          notifyListeners();
+        } catch (e) {
+          print('NudgeStep: 30s refresh skipped for id=$id: $e');
+        }
+      });
+    }
     _replace(updated);
     notifyListeners();
   }

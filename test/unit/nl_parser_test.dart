@@ -370,4 +370,85 @@ void main() {
       expect(parsed.scheduledAt, equals(DateTime(2026, 10, 6, 10, 45)));
     });
   });
+
+  group('sequential steps', () {
+    test('range expands "study topics 1-4 one by one"', () {
+      final parsed = NlParser.parse(
+        'study topics 1-4 one by one',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('study'));
+      expect(parsed.sequentialSteps,
+          equals(['topic 1', 'topic 2', 'topic 3', 'topic 4']));
+      expect(parsed.recurrence, equals(Recurrence.daily));
+    });
+
+    test('range expands "read chapters 1-5 one at a time"', () {
+      final parsed = NlParser.parse(
+        'read chapters 1-5 one at a time',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('read'));
+      expect(parsed.sequentialSteps, equals([
+        'chapter 1',
+        'chapter 2',
+        'chapter 3',
+        'chapter 4',
+        'chapter 5',
+      ]));
+    });
+
+    test('"call client A, then B, then C" inherits shared context', () {
+      final parsed = NlParser.parse(
+        'call client A, then B, then C',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('call'));
+      expect(parsed.sequentialSteps, equals([
+        'call client A',
+        'call client B',
+        'call client C',
+      ]));
+    });
+
+    test('"do push-ups, squats, then planks" stays bare', () {
+      final parsed = NlParser.parse(
+        'do push-ups, squats, then planks',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('do'));
+      expect(parsed.sequentialSteps,
+          equals(['push-ups', 'squats', 'planks']));
+    });
+
+    test('range with window attaches bounds', () {
+      final parsed = NlParser.parse(
+        'study topics 1-4 from 6pm to 10pm one by one',
+        now: _tue1000,
+      );
+      expect(parsed.title, equals('study'));
+      expect(parsed.sequentialSteps,
+          equals(['topic 1', 'topic 2', 'topic 3', 'topic 4']));
+      expect(parsed.windowStartMinutes, equals(1080));
+      expect(parsed.windowEndMinutes, equals(1320));
+    });
+
+    test('range caps at 20 items', () {
+      final parsed = NlParser.parse(
+        'read chapters 1-25 one at a time',
+        now: _tue1000,
+      );
+      expect(parsed.sequentialSteps.length, equals(20));
+      expect(parsed.sequentialSteps.first, equals('chapter 1'));
+      expect(parsed.sequentialSteps.last, equals('chapter 20'));
+    });
+
+    test('bare comma list is not sequential', () {
+      final parsed = NlParser.parse(
+        'buy milk, eggs, bread',
+        now: _tue1000,
+      );
+      expect(parsed.sequentialSteps, isEmpty);
+    });
+  });
 }

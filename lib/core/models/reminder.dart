@@ -95,6 +95,8 @@ class Reminder {
     this.intervalMinutes,
     this.windowStartMinutes,
     this.windowEndMinutes,
+    this.sequentialSteps = const [],
+    this.currentStepIndex = 0,
   })  : assert(timesOfDayMinutes.isNotEmpty,
             'timesOfDayMinutes needs at least one entry'),
         assert(
@@ -162,6 +164,18 @@ class Reminder {
   /// [windowStartMinutes] (windows wrapping midnight are deferred).
   final int? windowEndMinutes;
 
+  /// Ordered sub-tasks completed one at a time (v5 sequential steps).
+  /// Empty means a single-shot reminder; otherwise each completion
+  /// advances [currentStepIndex] until the last step completes the
+  /// reminder. The umbrella [title] stays the reminder identity while
+  /// notifications show the current step.
+  final List<String> sequentialSteps;
+
+  /// Index into [sequentialSteps] of the next step to complete.
+  /// Always 0 when [sequentialSteps] is empty; resets to 0 when a new
+  /// recurrence cycle starts.
+  final int currentStepIndex;
+
   /// Sorts and dedupes a raw times list for the constructor.
   static List<int> _normalizedTimes(List<int> times) {
     final sorted = times.toSet().toList()..sort();
@@ -188,6 +202,8 @@ class Reminder {
       'interval_minutes': intervalMinutes,
       'window_start_minutes': windowStartMinutes,
       'window_end_minutes': windowEndMinutes,
+      'sequential_steps': jsonEncode(sequentialSteps),
+      'current_step_index': currentStepIndex,
     };
   }
 
@@ -224,6 +240,22 @@ class Reminder {
     return [hour * 60 + minute];
   }
 
+  /// Decodes the v5 sequential-steps list; falls back to an empty list
+  /// for rows written before the v5 migration (missing or corrupt
+  /// payload). Accepts a JSON string (the DB form) or a raw list.
+  static List<String> _decodeSteps(Object? raw) {
+    if (raw is List) return raw.whereType<String>().toList();
+    if (raw is String) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) return decoded.whereType<String>().toList();
+      } on FormatException {
+        // Corrupt payload: fall through to the empty default.
+      }
+    }
+    return [];
+  }
+
   /// Creates a [Reminder] from a JSON-compatible map.
   factory Reminder.fromJson(Map<String, dynamic> json) {
     return Reminder(
@@ -247,6 +279,8 @@ class Reminder {
       intervalMinutes: json['interval_minutes'] as int?,
       windowStartMinutes: json['window_start_minutes'] as int?,
       windowEndMinutes: json['window_end_minutes'] as int?,
+      sequentialSteps: _decodeSteps(json['sequential_steps']),
+      currentStepIndex: json['current_step_index'] as int? ?? 0,
     );
   }
 
@@ -269,6 +303,8 @@ class Reminder {
     int? intervalMinutes,
     int? windowStartMinutes,
     int? windowEndMinutes,
+    List<String>? sequentialSteps,
+    int? currentStepIndex,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -286,6 +322,8 @@ class Reminder {
       intervalMinutes: intervalMinutes ?? this.intervalMinutes,
       windowStartMinutes: windowStartMinutes ?? this.windowStartMinutes,
       windowEndMinutes: windowEndMinutes ?? this.windowEndMinutes,
+      sequentialSteps: sequentialSteps ?? this.sequentialSteps,
+      currentStepIndex: currentStepIndex ?? this.currentStepIndex,
     );
   }
 }

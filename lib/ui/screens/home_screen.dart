@@ -73,7 +73,7 @@ class _ReminderTile extends StatelessWidget {
     return ListTile(
       leading: _CategoryBadge(category: reminder.category),
       title: Text(reminder.title),
-      subtitle: Text('Next: ${_formatTime(reminder.nextFireAt)}'),
+      subtitle: Text(_subtitle(reminder)),
       trailing: reminder.id != null
           ? Row(
               mainAxisSize: MainAxisSize.min,
@@ -108,6 +108,18 @@ String _formatTime(DateTime? dt) {
     return '--:--';
   }
   return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+}
+
+/// Tile subtitle: "step N of M" for sequential reminders (the umbrella
+/// title is already the main line), "Next: ..." otherwise. The index is
+/// clamped defensively so a stale value can never mislabel the tile.
+String _subtitle(Reminder reminder) {
+  if (reminder.sequentialSteps.isNotEmpty) {
+    final last = reminder.sequentialSteps.length - 1;
+    final index = reminder.currentStepIndex.clamp(0, last);
+    return 'step ${index + 1} of ${reminder.sequentialSteps.length}';
+  }
+  return 'Next: ${_formatTime(reminder.nextFireAt)}';
 }
 
 Future<void> _confirmDelete(BuildContext context, int id) async {

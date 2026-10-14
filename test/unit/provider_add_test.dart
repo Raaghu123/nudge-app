@@ -3,9 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:nudge/core/db/database_helper.dart';
 import 'package:nudge/core/models/reminder.dart';
 import 'package:nudge/core/providers/reminder_provider.dart';
 import 'package:nudge/core/recurrence.dart';
+import 'package:nudge/core/repositories/reminder_repository.dart';
 
 /// Exercises the real [ReminderProvider.addReminder] against an FFI-backed
 /// sqflite database. The notifications plugin has no VM implementation, so
@@ -263,6 +265,126 @@ void main() {
       final fireMinutes =
           saved.nextFireAt!.hour * 60 + saved.nextFireAt!.minute;
       expect(fireMinutes >= 420 && fireMinutes <= 1380, isTrue);
+    });
+  });
+
+  group('sequential completion', () {
+    Reminder threeStep({int index = 0, int? ws, int? we}) {
+      final now = DateTime.now();
+      return Reminder(
+        title: 'study',
+        timesOfDayMinutes: [1080],
+        recurrence: Recurrence.daily,
+        daysMask: 0,
+        category: Category.study,
+        status: ReminderStatus.pending,
+        nextFireAt: now.add(const Duration(hours: 1)),
+        createdAt: now,
+        updatedAt: now,
+        sequentialSteps: const ['topic 1', 'topic 2', 'topic 3'],
+        currentStepIndex: index,
+        windowStartMinutes: ws,
+        windowEndMinutes: we,
+      );
+    }
+
+    test('3-step, no window: complete() advances 0 to 1, stays pending',
+        () async {
+      final provider = newProvider();
+      final repo = ReminderRepository(await openAppDatabase());
+      final inserted = await repo.insert(threeStep());
+      final before = DateTime.now();
+
+      await provider.complete(inserted.id!);
+
+      final r =
+          (await repo.getAll()).firstWhere((e) => e.id == inserted.id);
+      expect(r.currentStepIndex, equals(1));
+      expect(r.status, equals(ReminderStatus.pending));
+      // Inside-window (no window set): next fire is ~30s out.
+      expect(r.nextFireAt, isNotNull);
+      expect(r.nextFireAt!.isAfter(before), isTrue);
+      expect(r.nextFireAt!.difference(before) <= const Duration(seconds: 35),
+          isTrue);
+    });
+
+    test('complete() again advances 1 to 2, still pending', () async {
+      final provider = newProvider();
+      final repo = ReminderRepository(await openAppDatabase());
+      final inserted = await repo.insert(threeStep());
+
+      await provider.complete(inserted.id!);
+      await provider.complete(inserted.id!);
+
+      final r =
+          (await repo.getAll()).firstWhere((e) => e.id == inserted.id);
+      expect(r.currentStepIndex, equals(2));
+      expect(r.status, equals(ReminderStatus.pending));
+    });
+
+    test('complete() on the last step marks completed', () async {
+      final provider = newProvider();
+      final repo = ReminderRepository(await openAppDatabase());
+      final inserted = await repo.insert(threeStep());
+
+      await provider.complete(inserted.id!);
+      await provider.complete(inserted.id!);
+      await provider.complete(inserted.id!);
+
+      final r =
+          (await repo.getAll()).firstWhere((e) => e.id == inserted.id);
+      expect(r.currentStepIndex, equals(2));
+      expect(r.status, equals(ReminderStatus.completed));
+    });
+
+    test('next cycle resets index to 0', () async {
+      final provider = newProvider();
+      final repo = ReminderRepository(await openAppDatabase());
+      final inserted = await repo.insert(threeStep(index: 2));
+      await provider.complete(inserted.id!);
+
+      final rolled = await repo.startNextCycle(
+        inserted.id!,
+        now: DateTime(2026, 10, 6, 10, 0),
+      );
+
+      expect(rolled.currentStepIndex, equals(0));
+      expect(rolled.status, equals(ReminderStatus.pending));
+      expect(rolled.nextFireAt, equals(DateTime(2026, 10, 6, 18, 0)));
+    });
+
+    test('non-sequential complete() is unchanged', () async {
+      final provider = newProvider();
+      final saved = await provider.addReminder(
+        title: 'Drink water',
+        hour: 9,
+        minute: 0,
+        recurrence: Recurrence.daily,
+        daysMask: 0,
+        category: Category.water,
+      );
+
+      await provider.complete(saved.id!);
+
+      final repo = ReminderRepository(await openAppDatabase());
+      final r = (await repo.getAll()).firstWhere((e) => e.id == saved.id);
+      expect(r.status, equals(ReminderStatus.completed));
+      expect(r.sequentialSteps, isEmpty);
+    });
+
+    test('outside-window completion advances with no immediate fire',
+        () async {
+      final repo = ReminderRepository(await openAppDatabase());
+      final inserted = await repo.insert(threeStep(ws: 1080, we: 1320));
+
+      final updated = await repo.completeStep(
+        inserted.id!,
+        now: DateTime(2026, 10, 6, 10, 0),
+      );
+
+      expect(updated.currentStepIndex, equals(1));
+      expect(updated.status, equals(ReminderStatus.pending));
+      expect(updated.nextFireAt, equals(DateTime(2026, 10, 7, 18, 0)));
     });
   });
 }

@@ -25,6 +25,7 @@ class ParsedReminder {
     this.timesOfDayMinutes = const [],
     this.windowStartMinutes,
     this.windowEndMinutes,
+    this.sequentialSteps = const [],
   });
 
   /// Reminder title with command prefixes and time/recurrence expressions
@@ -91,6 +92,13 @@ class ParsedReminder {
 
   /// Window end, see [windowStartMinutes].
   final int? windowEndMinutes;
+
+  /// Ordered sub-tasks completed one at a time. Empty for single-shot
+  /// reminders. Set only by explicit sequential signals ("one by one",
+  /// "in order", "sequentially", "one at a time", "then" between
+  /// items, or a "<noun> N-M" range) — never auto-detected from bare
+  /// comma lists.
+  final List<String> sequentialSteps;
 }
 
 /// Deterministic rule-based parser for natural-language reminders.
@@ -114,6 +122,10 @@ class ParsedReminder {
 ///   9am-6pm weekdays", "every hour on Mondays").
 /// - Category keywords per table below.
 /// - Category default times and importance/urgency defaults per table.
+/// - Sequential steps (explicit only): "one by one", "one at a time",
+///   "in order", "sequentially", "then" chains between items, and
+///   "<noun> N-M" ranges (topic/chapter/item/step/day/week, cap 20).
+///   Bare comma lists never count.
 ///
 /// Known limitations:
 /// - Sub-daily intervals ("every hour", "every N minutes") parse to
@@ -169,6 +181,26 @@ class NlParser {
     var recurrence = recurrenceHit.recurrence;
     var daysMask = recurrenceHit.daysMask;
     var recurrenceConfidence = recurrenceHit.confidence;
+    // --- 4b. Sequential steps (explicit signals or then-lists only;
+    // never from bare comma lists). Consumes the item list + signal
+    // spans so the title keeps just the verb + umbrella object.
+    final sequentialHit = _detectSequential(text, normalized, spans);
+    final sequentialSteps = sequentialHit.steps;
+    if (sequentialSteps.isNotEmpty) {
+      // A sequential list is a daily cycle by implication (mirrors the
+      // multi-time-list promotion); a stronger named recurrence wins.
+      if (recurrence == Recurrence.once) {
+        recurrence = Recurrence.daily;
+        recurrenceConfidence = 0.8;
+      }
+      // A "from X to Y" / "between X and Y" window attaches to the
+      // sequential cycle even without an interval recurrence (the
+      // schedule branches below only read it for intervals).
+      if (timeHit.windowStart != null) {
+        windowStart = timeHit.windowStart;
+        windowEnd = timeHit.windowEnd;
+      }
+    }
     if (timeHit.relativeMinutes != null) {
       final base = ref.add(Duration(minutes: timeHit.relativeMinutes!));
       hour = base.hour;
@@ -292,6 +324,7 @@ class NlParser {
       timesOfDayMinutes: timesOfDay,
       windowStartMinutes: windowStart,
       windowEndMinutes: windowEnd,
+      sequentialSteps: sequentialSteps,
     );
   }
 
@@ -363,6 +396,29 @@ class NlParser {
   static final RegExp _listNextPattern = RegExp(
     r'^(?:\s*,\s*(?:and\s+)?|\s+and\s+)(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm|a\.m\.|p\.m\.))?',
   );
+
+  /// Explicit sequential signals: "one by one", "one at a time",
+  /// "in order", "sequentially". A bare comma list without one of
+  /// these (or a "then" chain / noun range below) is never sequential.
+  static final RegExp _sequentialSignalPattern = RegExp(
+    r'\b(one by one|one at a time|in order|sequentially)\b',
+  );
+
+  /// Noun range for step expansion: "topics 1-4", "chapters 1-5".
+  /// The noun is part of the match so a bare "1-4" never expands.
+  /// Groups 1 = noun, 2 = start, 3 = end.
+  static final RegExp _sequentialRangePattern = RegExp(
+    r'\b(topics?|chapters?|items?|steps?|days?|weeks?)\s+(\d+)\s*-\s*(\d+)\b',
+  );
+
+  /// Separator between items of a "then" list: commas, "then", "and".
+  static final RegExp _sequentialSplitPattern = RegExp(
+    r'\s*,\s*|\bthen\b|\band\b',
+  );
+
+  /// Maximum steps from one range expansion ("chapters 1-25" keeps the
+  /// first 20 and logs the truncation).
+  static const int sequentialRangeCap = 20;
 
   static const List<String> _dayNames = [
     'monday',
@@ -910,6 +966,130 @@ class NlParser {
     return null;
   }
 
+  // ------------------------------------------------------------------
+  // Sequential steps.
+  // ------------------------------------------------------------------
+
+  /// Detects an explicit sequential-step list and consumes its spans.
+  ///
+  /// Explicit only: a signal phrase ([_sequentialSignalPattern]), a
+  /// "then" chain between items, or a noun range
+  /// ([_sequentialRangePattern]). A bare comma list ("buy milk, eggs,
+  /// bread") returns empty. Step text is sliced from [source] (the
+  /// original-cased input) so "client A" keeps its case; matching runs
+  /// on the lowercased [text] with identical indices.
+  static _SequentialHit _detectSequential(
+    String text,
+    String source,
+    List<_Span> spans,
+  ) {
+    bool overlaps(int start, int end) =>
+        spans.any((s) => s.overlaps(_Span(start, end)));
+
+    // Content starts after the command prefix ("remind me to ..."),
+    // whose span begins at 0 when present.
+    var contentStart = 0;
+    for (final s in spans) {
+      if (s.start == 0 && s.end > contentStart) contentStart = s.end;
+    }
+
+    final signal = _sequentialSignalPattern.firstMatch(text);
+
+    // --- Range form: "topics 1-4" -> ["topic 1" .. "topic 4"]. ---
+    for (final range in _sequentialRangePattern.allMatches(text)) {
+      if (overlaps(range.start, range.end)) continue;
+      var noun = range.group(1)!;
+      if (noun.endsWith('s')) noun = noun.substring(0, noun.length - 1);
+      var start = int.parse(range.group(2)!);
+      var end = int.parse(range.group(3)!);
+      if (start > end) {
+        final swap = start;
+        start = end;
+        end = swap;
+      }
+      var count = end - start + 1;
+      if (count > sequentialRangeCap) {
+        print('NudgeParse: range "$noun $start-$end" truncated to '
+            '$sequentialRangeCap steps');
+        end = start + sequentialRangeCap - 1;
+        count = sequentialRangeCap;
+      }
+      final steps = [
+        for (var i = start; i <= end; i++) '$noun $i',
+      ];
+      spans.add(_Span(range.start, range.end));
+      if (signal != null && !overlaps(signal.start, signal.end)) {
+        spans.add(_Span(signal.start, signal.end));
+      }
+      return _SequentialHit(steps);
+    }
+
+    // --- "then" chain: "call client A, then B, then C". ---
+    // The list region runs from the content start to the signal (when
+    // present) or the next consumed span (time/window) after it.
+    var regionEnd = signal?.start ?? text.length;
+    for (final s in spans) {
+      if (s.start > contentStart && s.start < regionEnd) {
+        regionEnd = s.start;
+      }
+    }
+    final region = text.substring(contentStart, regionEnd);
+    final thenCount = RegExp(r'\bthen\b').allMatches(region).length;
+    final hasComma = region.contains(',');
+    // A lone "then" without commas is prose ("rest then call mom"),
+    // not a list; two "then"s ("A then B then C") count on their own.
+    if (thenCount == 0 || (!hasComma && thenCount < 2)) {
+      return const _SequentialHit([]);
+    }
+    final rawItems = region
+        .split(_sequentialSplitPattern)
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (rawItems.length < 2) return const _SequentialHit([]);
+    // The first item carries the verb (and maybe shared context):
+    // 3+ words ("call client A") keep verb + context for the rest,
+    // 2 words ("do push-ups") drop the verb and stay bare,
+    // 1 word means everything is already bare.
+    final firstWords = rawItems[0].split(RegExp(r'\s+'));
+    final sliced = source.substring(contentStart, regionEnd);
+    // Restore original case by locating each item in order; the cursor
+    // matters because a short item ("C") can match inside an earlier
+    // word ("call").
+    var cursor = 0;
+    final lowered = sliced.toLowerCase();
+    final rawSliced = rawItems.map((item) {
+      final index = lowered.indexOf(item, cursor);
+      if (index < 0) return item;
+      cursor = index + item.length;
+      return sliced.substring(index, index + item.length);
+    }).toList();
+    final List<String> steps;
+    var verbLength = 0;
+    // Offset of the first item inside the sliced region (the command
+    // prefix usually eats trailing spaces, but never assume it).
+    final itemOffset = sliced.toLowerCase().indexOf(rawItems[0]);
+    if (firstWords.length >= 3) {
+      final context =
+          rawSliced[0].substring(0, rawSliced[0].length - firstWords.last.length).trim();
+      steps = [rawSliced[0]];
+      for (var i = 1; i < rawItems.length; i++) {
+        steps.add('$context ${rawSliced[i]}');
+      }
+      verbLength = itemOffset + rawSliced[0].indexOf(' ') + 1;
+    } else if (firstWords.length == 2) {
+      steps = [rawSliced[0].split(RegExp(r'\s+'))[1], ...rawSliced.sublist(1)];
+      verbLength = itemOffset + rawSliced[0].indexOf(' ') + 1;
+    } else {
+      steps = rawSliced;
+    }
+    spans.add(_Span(contentStart + verbLength, regionEnd));
+    if (signal != null && signal.start >= regionEnd) {
+      spans.add(_Span(signal.start, signal.end));
+    }
+    return _SequentialHit(steps);
+  }
+
   /// First match of [pattern] that does not overlap [spans], without
   /// consuming it. Callers add the span themselves once validated.
   static RegExpMatch? _firstNonOverlapping(
@@ -1140,6 +1320,14 @@ class _RawClock {
   final String hour;
   final String? minute;
   final String? meridiem;
+}
+
+/// Result of sequential-step detection: the ordered steps, empty when
+/// the input is single-shot (no explicit signal, "then" chain, or
+/// noun range found).
+class _SequentialHit {
+  const _SequentialHit(this.steps);
+  final List<String> steps;
 }
 
 class _ClockTime {

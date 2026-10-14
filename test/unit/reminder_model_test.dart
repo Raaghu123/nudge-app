@@ -318,4 +318,75 @@ void main() {
       expect(reminder.windowEndMinutes, isNull);
     });
   });
+
+  group('v5 sequential steps', () {
+    test('round-trips 4 steps with currentStepIndex 2 through a v5 row', () {
+      final original = Reminder(
+        id: 12,
+        title: 'study',
+        timesOfDayMinutes: [1080],
+        recurrence: Recurrence.daily,
+        daysMask: 0,
+        category: Category.study,
+        status: ReminderStatus.pending,
+        sequentialSteps: const ['topic 1', 'topic 2', 'topic 3', 'topic 4'],
+        currentStepIndex: 2,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      final row = original.toJson();
+      // DB form: JSON array string for steps, int for the index.
+      expect(row['sequential_steps'], equals('["topic 1","topic 2","topic 3","topic 4"]'));
+      expect(row['current_step_index'], equals(2));
+      final parsed = Reminder.fromJson(row);
+      expect(parsed.sequentialSteps, equals(['topic 1', 'topic 2', 'topic 3', 'topic 4']));
+      expect(parsed.currentStepIndex, equals(2));
+    });
+
+    test('defaults to empty steps and index 0', () {
+      final reminder = Reminder(
+        title: 'Test', timesOfDayMinutes: [480],
+        recurrence: Recurrence.once, daysMask: 0,
+        category: Category.other, status: ReminderStatus.pending,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      expect(reminder.sequentialSteps, isEmpty);
+      expect(reminder.currentStepIndex, equals(0));
+    });
+
+    test('fromJson falls back for pre-v5 rows without the steps columns', () {
+      final reminder = Reminder.fromJson({
+        'id': 13,
+        'title': 'Old row',
+        'hour': 9,
+        'minute': 0,
+        'recurrence': 'once',
+        'days_mask': 0,
+        'category': 'other',
+        'status': 'pending',
+        'next_fire_at': null,
+        'created_at': '2026-10-06T10:00:00',
+        'updated_at': '2026-10-06T10:00:00',
+      });
+      expect(reminder.sequentialSteps, isEmpty);
+      expect(reminder.currentStepIndex, equals(0));
+    });
+
+    test('copyWith replaces steps and index', () {
+      final original = Reminder(
+        title: 'Test', timesOfDayMinutes: [480],
+        recurrence: Recurrence.once, daysMask: 0,
+        category: Category.other, status: ReminderStatus.pending,
+        createdAt: DateTime.parse('2026-10-06T10:00:00'),
+        updatedAt: DateTime.parse('2026-10-06T10:00:00'),
+      );
+      final updated = original.copyWith(
+        sequentialSteps: const ['a', 'b'],
+        currentStepIndex: 1,
+      );
+      expect(updated.sequentialSteps, equals(['a', 'b']));
+      expect(updated.currentStepIndex, equals(1));
+    });
+  });
 }

@@ -56,10 +56,27 @@ Future<void> notificationTapBackground(NotificationResponse response) async {
       final actionId = response.actionId;
       if (actionId == 'done') {
         print('NudgeBg: branch=done for id=$id');
-        final r = all.firstWhere((e) => e.id == id);
-        await repo.update(r.copyWith(status: ReminderStatus.completed));
-        print('NudgeBg: marked id=$id completed, cancelling notification');
-        await NotificationService.cancel(id);
+        final updated = await repo.completeStep(id);
+        if (updated.status == ReminderStatus.completed) {
+          print('NudgeBg: marked id=$id completed, cancelling notification');
+          await NotificationService.cancel(id);
+        } else {
+          print('NudgeBg: advanced id=$id to step '
+              '${updated.currentStepIndex}, rescheduling');
+          await NotificationService.cancel(id);
+          await NotificationService.scheduleNext(updated);
+          // Best-effort re-arm when the next step comes due. If the OS
+          // kills this isolate before it fires, the scheduled alarm
+          // above still delivers the step on time.
+          Future.delayed(const Duration(seconds: 30), () async {
+            try {
+              print('NudgeBg: 30s best-effort re-arm for id=$id');
+              await NotificationService.scheduleNext(updated);
+            } catch (e) {
+              print('NudgeBg: 30s re-arm skipped for id=$id: $e');
+            }
+          });
+        }
       } else if (actionId == 'snooze') {
         print('NudgeBg: branch=snooze for id=$id');
         print('NudgeBg: cancelling notification id=$id before snooze');
@@ -179,8 +196,8 @@ class NotificationService {
     );
     await _plugin.zonedSchedule(
       r.id ?? 0,
-      r.title,
-      null,
+      _stepTitle(r),
+      _stepBody(r),
       tzDate,
       details,
       // alarmClock (AlarmManager.setAlarmClock) instead of exactAllowWhileIdle:
@@ -196,4 +213,28 @@ class NotificationService {
   }
 
   static Future<void> cancel(int id) async => _plugin.cancel(id);
+
+  /// Notification title: the current step for sequential reminders,
+  /// the umbrella title otherwise. The index is clamped defensively so
+  /// a stale value can never throw inside the scheduler.
+  static String _stepTitle(Reminder r) {
+    if (r.sequentialSteps.isEmpty) return r.title;
+    return r.sequentialSteps[_safeStepIndex(r)];
+  }
+
+  /// Notification body: "<umbrella> — step N of M" for sequential
+  /// reminders, null (existing behavior) otherwise.
+  static String? _stepBody(Reminder r) {
+    if (r.sequentialSteps.isEmpty) return null;
+    final index = _safeStepIndex(r);
+    return '${r.title} — step ${index + 1} of ${r.sequentialSteps.length}';
+  }
+
+  static int _safeStepIndex(Reminder r) {
+    if (r.currentStepIndex < 0) return 0;
+    if (r.currentStepIndex >= r.sequentialSteps.length) {
+      return r.sequentialSteps.length - 1;
+    }
+    return r.currentStepIndex;
+  }
 }

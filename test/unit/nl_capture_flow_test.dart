@@ -53,5 +53,29 @@ void main() {
       expect(find.byType(NlConfirmScreen), findsNothing);
       expect(find.byType(NlCaptureScreen), findsOneWidget);
     });
+
+    testWidgets('sequential range shows Steps row and windowed When',
+        (WidgetTester tester) async {
+      await pumpCapture(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('nl_input')),
+        'study topics 1-4 from 6pm to 10pm one by one',
+      );
+      await tester.tap(find.byKey(const Key('nl_preview')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NlConfirmScreen), findsOneWidget);
+
+      final steps = tester.widget<Text>(find.byKey(const Key('nl_steps')));
+      final lines = (steps.data ?? '').split('\n');
+      expect(lines, hasLength(4));
+      expect(lines.first, contains('1.'));
+      expect(lines.last, contains('4.'));
+
+      final whenLabel = tester.widget<Text>(find.byKey(const Key('nl_when')));
+      expect(whenLabel.data ?? '',
+          contains('Every day from 6:00 PM to 10:00 PM'));
+    });
   });
 }
